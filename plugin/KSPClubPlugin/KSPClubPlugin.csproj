@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net46</TargetFramework>
+    <AssemblyName>KSPClubPlugin</AssemblyName>
+    <OutputType>Library</OutputType>
+    <Nullable>enable</Nullable>
+    <LangVersion>9.0</LangVersion>
+    <RootNamespace>KSPClub</RootNamespace>
+    <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <!--
+      Set KSP_MANAGED to your KSP install's Managed folder.
+      Default is the Mac Steam path used during development.
+      Override via:  dotnet build -p:KSP_MANAGED=/path/to/Managed
+    -->
+    <KSP_MANAGED Condition="'$(KSP_MANAGED)' == ''"
+      >$(HOME)/Library/Application Support/Steam/steamapps/common/KSP CLUB/Kerbal Space Program CLUB/KSP.app/Contents/Resources/Data/Managed</KSP_MANAGED>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(KSP_MANAGED)/Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(KSP_MANAGED)/UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(KSP_MANAGED)/UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.IMGUIModule">
+      <HintPath>$(KSP_MANAGED)/UnityEngine.IMGUIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UI">
+      <HintPath>$(KSP_MANAGED)/UnityEngine.UI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!--
+    After building, copy the DLL into GameData so it can be dropped
+    straight into the KSP install.
+  -->
+  <Target Name="CopyToGameData" AfterTargets="Build">
+    <MakeDir Directories="$(ProjectDir)../GameData/KSPClubPlugin" />
+    <Copy SourceFiles="$(OutputPath)$(AssemblyName).dll"
+          DestinationFolder="$(ProjectDir)../GameData/KSPClubPlugin" />
+  </Target>
+
+</Project>

@@ -38,6 +38,7 @@ PERSISTENT_SCENARIOS: frozenset[str] = frozenset({
     "ScenarioNewGameIntro",
     "DeployedScience",        # player's own deployed science instruments
     "SCANcontroller",         # player's own map scan data
+    "KSPClubScenario",        # plugin's owned-vessel-IDs list
 })
 
 # These scenarios describe the shared world state and come from the universal state.
