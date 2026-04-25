@@ -22,6 +22,9 @@ Rules observed from real save files:
 """
 
 
+from __future__ import annotations
+
+
 class Node:
     """One block in an .sfs file, e.g. VESSEL { ... }"""
 
