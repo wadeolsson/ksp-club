@@ -15,3 +15,4 @@ plugin/KSPClubPlugin/obj/
 
 # Local config overrides
 merger/config.local.py
+.ksp-club.json
