@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+*.pyo
+.env
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+.DS_Store
+
+# KSP plugin build output
+plugin/KSPClubPlugin/bin/
+plugin/KSPClubPlugin/obj/
+
+# Local config overrides
+merger/config.local.py
