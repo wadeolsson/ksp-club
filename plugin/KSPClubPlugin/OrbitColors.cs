@@ -67,7 +67,9 @@ namespace KSPClub
             foreach (var vessel in vessels)
             {
                 if (vessel?.orbitDriver?.Renderer == null) continue;
-                vessel.orbitDriver.Renderer.orbitColor = GetVesselColor(vessel);
+                var color = GetVesselColor(vessel);
+                vessel.orbitDriver.Renderer.orbitColor = color;
+                vessel.orbitDriver.Renderer.nodeColor  = color;
             }
         }
 
