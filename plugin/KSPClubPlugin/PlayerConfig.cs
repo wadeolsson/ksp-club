@@ -50,6 +50,7 @@ namespace KSPClub
             GameEvents.onLevelWasLoaded.Add(OnSceneLoaded);
             GameEvents.onGameStateSave.Add(OnGameStateSave);
             GameEvents.onGameStateLoad.Add(OnGameStateLoad);
+            GameEvents.onProtoVesselSave.Add(OnProtoVesselSave);
         }
 
         void OnDestroy()
@@ -57,6 +58,7 @@ namespace KSPClub
             GameEvents.onLevelWasLoaded.Remove(OnSceneLoaded);
             GameEvents.onGameStateSave.Remove(OnGameStateSave);
             GameEvents.onGameStateLoad.Remove(OnGameStateLoad);
+            GameEvents.onProtoVesselSave.Remove(OnProtoVesselSave);
         }
 
         // ------------------------------------------------------------------ game state load
@@ -155,71 +157,61 @@ namespace KSPClub
                           $"{kerbalsClaimed} Kerbal(s) from existing save.");
         }
 
-        // ------------------------------------------------------------------ Fix 2: save hook — stamp playerID + agencyName
+        // ------------------------------------------------------------------ Fix 2: stamp playerID + agencyName
 
+        // Fires per-vessel during serialization — the right moment to inject fields.
+        void OnProtoVesselSave(GameEvents.FromToAction<ProtoVessel, ConfigNode> data)
+        {
+            if (string.IsNullOrEmpty(PlayerId)) return;
+
+            var scenario = KSPClubScenario.Instance;
+            if (scenario == null) return;
+
+            if (!scenario.OwnsVessel(data.from.persistentId)) return;
+
+            data.to.RemoveValue("playerID");
+            data.to.AddValue("playerID", PlayerId);
+
+            if (!string.IsNullOrEmpty(AgencyName))
+            {
+                data.to.RemoveValue("agencyName");
+                data.to.AddValue("agencyName", AgencyName);
+            }
+
+            Debug.Log($"[KSPClub] Stamped vessel '{data.from.vesselName}' " +
+                      $"playerID={PlayerId} agencyName={AgencyName}");
+        }
+
+        // Stamps Kerbals — roster is available in the full game node.
         void OnGameStateSave(ConfigNode gameNode)
         {
             if (string.IsNullOrEmpty(PlayerId)) return;
 
             var scenario = KSPClubScenario.Instance;
-            if (scenario == null)
-            {
-                Debug.LogWarning("[KSPClub] OnGameStateSave: ClubScenario is null — cannot stamp");
-                return;
-            }
-            Debug.Log($"[KSPClub] OnGameStateSave: scenario owns " +
-                      $"{scenario.OwnedVesselCount} vessel(s), {scenario.OwnedKerbalCount} Kerbal(s)");
+            if (scenario == null) return;
 
-            int vesselTagged = 0;
-            int kerbalTagged = 0;
-
-            // Tag owned vessels
-            var flightState = gameNode.GetNode("FLIGHTSTATE");
-            if (flightState != null)
-            {
-                foreach (ConfigNode vesselNode in flightState.GetNodes("VESSEL"))
-                {
-                    if (uint.TryParse(vesselNode.GetValue("persistentId"), out uint pid) &&
-                        scenario.OwnsVessel(pid))
-                    {
-                        vesselNode.RemoveValue("playerID");
-                        vesselNode.AddValue("playerID", PlayerId);
-
-                        if (!string.IsNullOrEmpty(AgencyName))
-                        {
-                            vesselNode.RemoveValue("agencyName");
-                            vesselNode.AddValue("agencyName", AgencyName);
-                        }
-                        vesselTagged++;
-                    }
-                }
-            }
-
-            // Tag owned Kerbals
             var roster = gameNode.GetNode("ROSTER");
-            if (roster != null)
-            {
-                foreach (ConfigNode kerbalNode in roster.GetNodes("KERBAL"))
-                {
-                    string name = kerbalNode.GetValue("name") ?? "";
-                    if (scenario.OwnsKerbal(name))
-                    {
-                        kerbalNode.RemoveValue("playerID");
-                        kerbalNode.AddValue("playerID", PlayerId);
+            if (roster == null) return;
 
-                        if (!string.IsNullOrEmpty(AgencyName))
-                        {
-                            kerbalNode.RemoveValue("agencyName");
-                            kerbalNode.AddValue("agencyName", AgencyName);
-                        }
-                        kerbalTagged++;
-                    }
+            int tagged = 0;
+            foreach (ConfigNode kerbalNode in roster.GetNodes("KERBAL"))
+            {
+                string name = kerbalNode.GetValue("name") ?? "";
+                if (!scenario.OwnsKerbal(name)) continue;
+
+                kerbalNode.RemoveValue("playerID");
+                kerbalNode.AddValue("playerID", PlayerId);
+
+                if (!string.IsNullOrEmpty(AgencyName))
+                {
+                    kerbalNode.RemoveValue("agencyName");
+                    kerbalNode.AddValue("agencyName", AgencyName);
                 }
+                tagged++;
             }
 
-            if (vesselTagged > 0 || kerbalTagged > 0)
-                Debug.Log($"[KSPClub] Stamped {vesselTagged} vessel(s) and " +
-                          $"{kerbalTagged} Kerbal(s) with playerID={PlayerId}");
+            if (tagged > 0)
+                Debug.Log($"[KSPClub] Stamped {tagged} Kerbal(s) with playerID={PlayerId}");
         }
 
         // ------------------------------------------------------------------ new-save check
