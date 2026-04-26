@@ -102,14 +102,18 @@ namespace KSPClub
             ScreenMessages.PostScreenMessage(
                 "[KSP CLUB] Saving game...", 5f, ScreenMessageStyle.UPPER_CENTER);
 
-            string savedPath = GamePersistence.SaveGame(
-                "persistent", HighLogic.SaveFolder, SaveMode.OVERWRITE);
+            GamePersistence.SaveGame("persistent", HighLogic.SaveFolder, SaveMode.OVERWRITE);
 
             yield return null; // wait one frame for write to complete
 
-            if (string.IsNullOrEmpty(savedPath))
+            // Construct the full path ourselves — SaveGame return value is just the filename
+            string savedPath = Path.Combine(
+                KSPUtil.ApplicationRootPath, "saves",
+                HighLogic.SaveFolder, "persistent.sfs");
+
+            if (!File.Exists(savedPath))
             {
-                ShowResult(false, "Could not save game. Try manually saving first.");
+                ShowResult(false, $"Could not find save file at:\n{savedPath}\n\nTry saving manually first.");
                 _submitting = false;
                 yield break;
             }
