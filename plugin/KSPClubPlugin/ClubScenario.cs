@@ -3,12 +3,9 @@ using System.Collections.Generic;
 namespace KSPClub
 {
     /// <summary>
-    /// ScenarioModule that tracks which vessel persistentIds belong to this player.
-    /// Saved and loaded automatically with the game — the data lives inside
-    /// persistent.sfs under a SCENARIO { name = KSPClubScenario } block.
-    ///
-    /// The merger tool recognises "KSPClubScenario" as a persistent scenario
-    /// and keeps it with the player's save across weekly merges.
+    /// ScenarioModule tracking which vessel persistentIds and Kerbal names
+    /// belong to this player. Saved inside persistent.sfs as KSPClubScenario.
+    /// The merger keeps this block with the player's persistent layer.
     /// </summary>
     [KSPScenario(
         ScenarioCreationOptions.AddToAllGames | ScenarioCreationOptions.AddToExistingGames,
@@ -21,7 +18,8 @@ namespace KSPClub
     {
         public static KSPClubScenario? Instance { get; private set; }
 
-        private readonly HashSet<uint> _ownedIds = new HashSet<uint>();
+        private readonly HashSet<uint>   _ownedVesselIds    = new HashSet<uint>();
+        private readonly HashSet<string> _ownedKerbalNames  = new HashSet<string>();
 
         // ------------------------------------------------------------------ lifecycle
 
@@ -40,31 +38,54 @@ namespace KSPClub
 
         public override void OnSave(ConfigNode node)
         {
-            ConfigNode owned = node.AddNode("OWNED_VESSELS");
-            foreach (uint id in _ownedIds)
-                owned.AddValue("id", id.ToString());
+            ConfigNode vessels = node.AddNode("OWNED_VESSELS");
+            foreach (uint id in _ownedVesselIds)
+                vessels.AddValue("id", id.ToString());
+
+            ConfigNode kerbals = node.AddNode("OWNED_KERBALS");
+            foreach (string name in _ownedKerbalNames)
+                kerbals.AddValue("name", name);
         }
 
         public override void OnLoad(ConfigNode node)
         {
-            _ownedIds.Clear();
-            ConfigNode? owned = node.GetNode("OWNED_VESSELS");
-            if (owned == null) return;
-            foreach (string idStr in owned.GetValues("id"))
-                if (uint.TryParse(idStr, out uint id))
-                    _ownedIds.Add(id);
+            _ownedVesselIds.Clear();
+            ConfigNode? vessels = node.GetNode("OWNED_VESSELS");
+            if (vessels != null)
+                foreach (string idStr in vessels.GetValues("id"))
+                    if (uint.TryParse(idStr, out uint id))
+                        _ownedVesselIds.Add(id);
+
+            _ownedKerbalNames.Clear();
+            ConfigNode? kerbals = node.GetNode("OWNED_KERBALS");
+            if (kerbals != null)
+                foreach (string name in kerbals.GetValues("name"))
+                    if (!string.IsNullOrEmpty(name))
+                        _ownedKerbalNames.Add(name);
         }
 
-        // ------------------------------------------------------------------ ownership
+        // ------------------------------------------------------------------ vessel ownership
 
         public void ClaimVessel(uint persistentId)
         {
-            _ownedIds.Add(persistentId);
-            UnityEngine.Debug.Log($"[KSPClub] Claimed vessel persistentId={persistentId}");
+            if (_ownedVesselIds.Add(persistentId))
+                UnityEngine.Debug.Log($"[KSPClub] Claimed vessel persistentId={persistentId}");
         }
 
-        public bool OwnsVessel(uint persistentId) => _ownedIds.Contains(persistentId);
+        public bool OwnsVessel(uint persistentId) => _ownedVesselIds.Contains(persistentId);
 
-        public int OwnedCount => _ownedIds.Count;
+        public int OwnedVesselCount => _ownedVesselIds.Count;
+
+        // ------------------------------------------------------------------ Kerbal ownership
+
+        public void ClaimKerbal(string name)
+        {
+            if (_ownedKerbalNames.Add(name))
+                UnityEngine.Debug.Log($"[KSPClub] Claimed Kerbal '{name}'");
+        }
+
+        public bool OwnsKerbal(string name) => _ownedKerbalNames.Contains(name);
+
+        public int OwnedKerbalCount => _ownedKerbalNames.Count;
     }
 }

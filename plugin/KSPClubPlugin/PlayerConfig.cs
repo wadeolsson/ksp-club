@@ -7,9 +7,10 @@ namespace KSPClub
 {
     /// <summary>
     /// Persists across all scene loads (persist=true). Responsibilities:
-    ///   - Load/save player config (ID, GitHub token, repo settings)
+    ///   - Load/save player config (ID, agency name, GitHub token, repo settings)
     ///   - Show first-run setup dialog
-    ///   - Stamp playerID into VESSEL nodes on every game save
+    ///   - On game load: claim existing untagged vessels + Kerbals as this player's
+    ///   - On game save: stamp playerID + agencyName into owned VESSEL and KERBAL nodes
     ///   - Check for a new merged save on main menu load and offer to download it
     /// </summary>
     [KSPAddon(KSPAddon.Startup.MainMenu, true)]
@@ -19,6 +20,7 @@ namespace KSPClub
 
         // player identity
         public string PlayerId    { get; private set; } = "";
+        public string AgencyName  { get; private set; } = "";
 
         // GitHub sync settings
         public string GitHubToken { get; private set; } = "";
@@ -26,9 +28,11 @@ namespace KSPClub
         public string RepoName    { get; private set; } = "ksp-club-saves";
         public string SaveName    { get; private set; } = "KSP_CLUB";
 
-        // last known SHA of output/<playerId>/persistent.sfs
-        private string _lastOutputSha = "";
+        private string _lastOutputSha   = "";
         private bool   _checkedThisSession;
+
+        // Pending game node cached from onGameStateLoad, processed after scene settles
+        private ConfigNode? _pendingGameNode;
 
         private static string ConfigPath =>
             Path.Combine(KSPUtil.ApplicationRootPath,
@@ -45,25 +49,42 @@ namespace KSPClub
             Load();
             GameEvents.onLevelWasLoaded.Add(OnSceneLoaded);
             GameEvents.onGameStateSave.Add(OnGameStateSave);
+            GameEvents.onGameStateLoad.Add(OnGameStateLoad);
         }
 
         void OnDestroy()
         {
             GameEvents.onLevelWasLoaded.Remove(OnSceneLoaded);
             GameEvents.onGameStateSave.Remove(OnGameStateSave);
+            GameEvents.onGameStateLoad.Remove(OnGameStateLoad);
         }
 
-        // ------------------------------------------------------------------ scene hooks
+        // ------------------------------------------------------------------ game state load
+
+        // Cache the raw ConfigNode as the game loads so we can sweep it for
+        // untagged vessels/Kerbals once the scene (and ClubScenario) are ready.
+        void OnGameStateLoad(ConfigNode gameNode)
+        {
+            _pendingGameNode = gameNode;
+        }
+
+        // ------------------------------------------------------------------ scene hook
 
         void OnSceneLoaded(GameScenes scene)
         {
+            // --- claim pass: sweep pending game node now that ClubScenario is live
+            if (_pendingGameNode != null &&
+                (scene == GameScenes.SPACECENTER || scene == GameScenes.FLIGHT))
+            {
+                ClaimExistingFromNode(_pendingGameNode);
+                _pendingGameNode = null;
+            }
+
+            // --- main menu: setup dialog + new-save check
             if (scene == GameScenes.MAINMENU)
             {
-                // Show setup dialog if config is incomplete
                 if (string.IsNullOrEmpty(PlayerId) || string.IsNullOrEmpty(GitHubToken))
                     StartCoroutine(DelayThen(2f, ShowSetupDialog));
-
-                // Once per session: check if the game master has pushed a new save
                 else if (!_checkedThisSession && SyncConfigured)
                 {
                     _checkedThisSession = true;
@@ -71,13 +92,68 @@ namespace KSPClub
                 }
             }
 
-            // Show setup dialog on first entry to an active scene if still not configured
+            // --- first entry to active scene with no ID yet
             if (string.IsNullOrEmpty(PlayerId) &&
                 (scene == GameScenes.SPACECENTER || scene == GameScenes.FLIGHT))
                 StartCoroutine(DelayThen(0f, ShowSetupDialog));
         }
 
-        // ------------------------------------------------------------------ save hook
+        // ------------------------------------------------------------------ Fix 1: claim existing vessels + Kerbals
+
+        void ClaimExistingFromNode(ConfigNode gameNode)
+        {
+            if (string.IsNullOrEmpty(PlayerId)) return;
+
+            var scenario = KSPClubScenario.Instance;
+            if (scenario == null) return;
+
+            int vesselsClaimed = 0;
+            int kerbalsClaimed = 0;
+
+            // Vessels: claim those tagged as ours or with no tag at all
+            var flightState = gameNode.GetNode("FLIGHTSTATE");
+            if (flightState != null)
+            {
+                foreach (ConfigNode vesselNode in flightState.GetNodes("VESSEL"))
+                {
+                    string vid = vesselNode.GetValue("playerID") ?? "";
+                    if (vid == PlayerId || vid == "")
+                    {
+                        if (uint.TryParse(vesselNode.GetValue("persistentId"), out uint pid))
+                        {
+                            scenario.ClaimVessel(pid);
+                            vesselsClaimed++;
+                        }
+                    }
+                }
+            }
+
+            // Kerbals: claim those tagged as ours or with no tag (excluding stock)
+            var roster = gameNode.GetNode("ROSTER");
+            if (roster != null)
+            {
+                foreach (ConfigNode kerbalNode in roster.GetNodes("KERBAL"))
+                {
+                    string name = kerbalNode.GetValue("name") ?? "";
+                    string kid  = kerbalNode.GetValue("playerID") ?? "";
+
+                    if (string.IsNullOrEmpty(name)) continue;
+                    if (KerbalRestrictor.IsStockKerbal(name)) continue;
+
+                    if (kid == PlayerId || kid == "")
+                    {
+                        scenario.ClaimKerbal(name);
+                        kerbalsClaimed++;
+                    }
+                }
+            }
+
+            if (vesselsClaimed > 0 || kerbalsClaimed > 0)
+                Debug.Log($"[KSPClub] Claimed {vesselsClaimed} vessel(s) and " +
+                          $"{kerbalsClaimed} Kerbal(s) from existing save.");
+        }
+
+        // ------------------------------------------------------------------ Fix 2: save hook — stamp playerID + agencyName
 
         void OnGameStateSave(ConfigNode gameNode)
         {
@@ -86,23 +162,56 @@ namespace KSPClub
             var scenario = KSPClubScenario.Instance;
             if (scenario == null) return;
 
-            var flightState = gameNode.GetNode("FLIGHTSTATE");
-            if (flightState == null) return;
+            int vesselTagged = 0;
+            int kerbalTagged = 0;
 
-            int tagged = 0;
-            foreach (ConfigNode vesselNode in flightState.GetNodes("VESSEL"))
+            // Tag owned vessels
+            var flightState = gameNode.GetNode("FLIGHTSTATE");
+            if (flightState != null)
             {
-                if (uint.TryParse(vesselNode.GetValue("persistentId"), out uint pid) &&
-                    scenario.OwnsVessel(pid))
+                foreach (ConfigNode vesselNode in flightState.GetNodes("VESSEL"))
                 {
-                    vesselNode.RemoveValue("playerID");
-                    vesselNode.AddValue("playerID", PlayerId);
-                    tagged++;
+                    if (uint.TryParse(vesselNode.GetValue("persistentId"), out uint pid) &&
+                        scenario.OwnsVessel(pid))
+                    {
+                        vesselNode.RemoveValue("playerID");
+                        vesselNode.AddValue("playerID", PlayerId);
+
+                        if (!string.IsNullOrEmpty(AgencyName))
+                        {
+                            vesselNode.RemoveValue("agencyName");
+                            vesselNode.AddValue("agencyName", AgencyName);
+                        }
+                        vesselTagged++;
+                    }
                 }
             }
 
-            if (tagged > 0)
-                Debug.Log($"[KSPClub] Tagged {tagged} vessel(s) with playerID={PlayerId}");
+            // Tag owned Kerbals
+            var roster = gameNode.GetNode("ROSTER");
+            if (roster != null)
+            {
+                foreach (ConfigNode kerbalNode in roster.GetNodes("KERBAL"))
+                {
+                    string name = kerbalNode.GetValue("name") ?? "";
+                    if (scenario.OwnsKerbal(name))
+                    {
+                        kerbalNode.RemoveValue("playerID");
+                        kerbalNode.AddValue("playerID", PlayerId);
+
+                        if (!string.IsNullOrEmpty(AgencyName))
+                        {
+                            kerbalNode.RemoveValue("agencyName");
+                            kerbalNode.AddValue("agencyName", AgencyName);
+                        }
+                        kerbalTagged++;
+                    }
+                }
+            }
+
+            if (vesselTagged > 0 || kerbalTagged > 0)
+                Debug.Log($"[KSPClub] Stamped {vesselTagged} vessel(s) and " +
+                          $"{kerbalTagged} Kerbal(s) with playerID={PlayerId}");
         }
 
         // ------------------------------------------------------------------ new-save check
@@ -113,72 +222,53 @@ namespace KSPClub
             !string.IsNullOrEmpty(RepoOwner) &&
             !string.IsNullOrEmpty(RepoName);
 
-        void CheckForNewSave()
-        {
-            StartCoroutine(CheckForNewSaveCoroutine());
-        }
+        void CheckForNewSave() => StartCoroutine(CheckForNewSaveCoroutine());
 
         IEnumerator CheckForNewSaveCoroutine()
         {
             var client = MakeClient();
-            string remotePath = $"output/{PlayerId}/persistent.sfs";
-
             string? remoteSha = null;
-            yield return client.GetSha(remotePath, sha => remoteSha = sha);
+            yield return client.GetSha($"output/{PlayerId}/persistent.sfs",
+                sha => remoteSha = sha);
 
-            if (remoteSha == null)
-            {
-                Debug.Log("[KSPClub] No output save found on remote (not yet merged).");
-                yield break;
-            }
+            if (remoteSha == null || remoteSha == _lastOutputSha) yield break;
 
-            if (remoteSha == _lastOutputSha)
-            {
-                Debug.Log("[KSPClub] Output save is up to date.");
-                yield break;
-            }
-
-            // New save available — prompt player
             Debug.Log($"[KSPClub] New output save available (sha={remoteSha}).");
-            ShowNewSaveDialog(client, remotePath, remoteSha);
+            ShowNewSaveDialog(client, remoteSha);
         }
 
-        void ShowNewSaveDialog(GitHubClient client, string remotePath, string remoteSha)
+        void ShowNewSaveDialog(GitHubClient client, string remoteSha)
         {
             PopupDialog.SpawnPopupDialog(
-                new Vector2(0.5f, 0.5f),
-                new Vector2(0.5f, 0.5f),
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
                 new MultiOptionDialog(
                     "KSPClubNewSave",
                     $"The game master has merged this week's saves.\n\n" +
                     $"A new <b>{SaveName}</b> save is ready to download.\n\n" +
                     "Download now and load it when you start playing?",
                     "KSP CLUB — New Save Available",
-                    HighLogic.UISkin,
-                    360f,
+                    HighLogic.UISkin, 360f,
                     new DialogGUIButton("Download", () =>
-                        StartCoroutine(DownloadNewSave(client, remotePath, remoteSha))),
+                        StartCoroutine(DownloadNewSave(client, remoteSha))),
                     new DialogGUIButton("Later", null, false)
                 ),
-                false,
-                HighLogic.UISkin
-            );
+                false, HighLogic.UISkin);
         }
 
-        IEnumerator DownloadNewSave(GitHubClient client, string remotePath, string newSha)
+        IEnumerator DownloadNewSave(GitHubClient client, string newSha)
         {
             ScreenMessages.PostScreenMessage(
-                "[KSP CLUB] Downloading new save...",
-                60f, ScreenMessageStyle.UPPER_CENTER);
+                "[KSP CLUB] Downloading new save...", 60f, ScreenMessageStyle.UPPER_CENTER);
 
             byte[]? data = null;
-            yield return client.DownloadFile(remotePath, bytes => data = bytes);
+            yield return client.DownloadFile(
+                $"output/{PlayerId}/persistent.sfs", bytes => data = bytes);
 
             ScreenMessages.PostScreenMessage("", 0f, ScreenMessageStyle.UPPER_CENTER);
 
             if (data == null)
             {
-                ShowError("Download failed. Check your internet connection and try again from the Space Center.");
+                ShowError("Download failed. Check your internet connection and try again.");
                 yield break;
             }
 
@@ -198,80 +288,76 @@ namespace KSPClub
 
             _lastOutputSha = newSha;
             Save();
-            Debug.Log($"[KSPClub] New save written to {savePath}");
 
             PopupDialog.SpawnPopupDialog(
-                new Vector2(0.5f, 0.5f),
-                new Vector2(0.5f, 0.5f),
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
                 new MultiOptionDialog(
                     "KSPClubDownloadDone",
-                    $"Save downloaded successfully!\n\n" +
-                    $"Load the <b>{SaveName}</b> save to play with this week's universe.",
+                    $"Save downloaded!\n\nLoad the <b>{SaveName}</b> save to play " +
+                    "with this week's universe.",
                     "KSP CLUB — Download Complete",
                     HighLogic.UISkin,
                     new DialogGUIButton("OK", null, true)
                 ),
-                false,
-                HighLogic.UISkin
-            );
+                false, HighLogic.UISkin);
         }
 
         // ------------------------------------------------------------------ setup dialog
 
         public void ShowSetupDialog()
         {
-            string inputId    = PlayerId;
-            string inputToken = GitHubToken;
-            string inputOwner = RepoOwner;
-            string inputRepo  = RepoName;
-            string inputSave  = SaveName;
-
-            bool isFirstRun = string.IsNullOrEmpty(PlayerId);
+            string inputId     = PlayerId;
+            string inputAgency = AgencyName;
+            string inputToken  = GitHubToken;
+            string inputOwner  = RepoOwner;
+            string inputRepo   = RepoName;
+            string inputSave   = SaveName;
 
             PopupDialog.SpawnPopupDialog(
-                new Vector2(0.5f, 0.5f),
-                new Vector2(0.5f, 0.5f),
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
                 new MultiOptionDialog(
                     "KSPClubSetup",
-                    isFirstRun
-                        ? "Welcome to KSP CLUB!\n\nConfigure your player ID and GitHub token " +
-                          "to enable automatic save sync."
+                    string.IsNullOrEmpty(PlayerId)
+                        ? "Welcome to KSP CLUB!\n\nConfigure your player ID and GitHub " +
+                          "token to enable automatic save sync."
                         : "Update your KSP CLUB settings.",
                     "KSP CLUB — Setup",
-                    HighLogic.UISkin,
-                    380f,
-                    new DialogGUILabel("<b>Player ID</b> (assigned by your game master)"),
+                    HighLogic.UISkin, 400f,
+                    new DialogGUILabel("<b>Player ID</b>  (assigned by your game master)"),
                     new DialogGUITextInput(inputId, "e.g. wade", false, 32,
                         s => { inputId = s; return s; }, 28f),
-                    new DialogGUILabel("<b>GitHub Token</b> (Personal Access Token with repo scope)"),
-                    new DialogGUITextInput(inputToken, "ghp_...", true, 100,
+                    new DialogGUILabel("<b>Agency Name</b>  (your space agency name)"),
+                    new DialogGUITextInput(inputAgency, "e.g. Olsson Aerospace", false, 64,
+                        s => { inputAgency = s; return s; }, 28f),
+                    new DialogGUILabel("<b>GitHub Token</b>  (fine-grained PAT, repo Contents R/W)"),
+                    new DialogGUITextInput(inputToken, "github_pat_...", true, 200,
                         s => { inputToken = s; return s; }, 28f),
-                    new DialogGUILabel("<b>Repo Owner</b>"),
-                    new DialogGUITextInput(inputOwner, "wadeolsson", false, 64,
-                        s => { inputOwner = s; return s; }, 28f),
-                    new DialogGUILabel("<b>Repo Name</b>"),
-                    new DialogGUITextInput(inputRepo, "ksp-club-saves", false, 64,
-                        s => { inputRepo = s; return s; }, 28f),
-                    new DialogGUILabel("<b>Club Save Name</b> (your KSP save folder)"),
+                    new DialogGUILabel("<b>Repo Owner / Repo Name</b>"),
+                    new DialogGUIHorizontalLayout(
+                        new DialogGUITextInput(inputOwner, "owner", false, 64,
+                            s => { inputOwner = s; return s; }, 28f),
+                        new DialogGUILabel("  /  "),
+                        new DialogGUITextInput(inputRepo, "ksp-club-saves", false, 64,
+                            s => { inputRepo = s; return s; }, 28f)
+                    ),
+                    new DialogGUILabel("<b>Club Save Name</b>  (KSP save folder)"),
                     new DialogGUITextInput(inputSave, "KSP_CLUB", false, 32,
                         s => { inputSave = s; return s; }, 28f),
                     new DialogGUIButton("Save", () =>
-                    {
-                        SetConfig(inputId, inputToken, inputOwner, inputRepo, inputSave);
-                    }),
+                        SetConfig(inputId, inputAgency, inputToken,
+                                  inputOwner, inputRepo, inputSave)),
                     new DialogGUIButton("Cancel", null, false)
                 ),
-                false,
-                HighLogic.UISkin
-            );
+                false, HighLogic.UISkin);
         }
 
         // ------------------------------------------------------------------ config management
 
-        public void SetConfig(
-            string id, string token, string owner, string repo, string saveName)
+        public void SetConfig(string id, string agency, string token,
+                              string owner, string repo, string saveName)
         {
             PlayerId    = id.Trim().ToLower();
+            AgencyName  = agency.Trim();
             GitHubToken = token.Trim();
             RepoOwner   = owner.Trim();
             RepoName    = repo.Trim();
@@ -279,15 +365,10 @@ namespace KSPClub
             Save();
 
             ScreenMessages.PostScreenMessage(
-                $"[KSP CLUB] Settings saved. Player ID: '{PlayerId}'",
+                $"[KSP CLUB] Settings saved — {PlayerId} / {AgencyName}",
                 4f, ScreenMessageStyle.UPPER_CENTER);
-            Debug.Log($"[KSPClub] Config saved: playerId={PlayerId} repo={RepoOwner}/{RepoName}");
-        }
-
-        public void SetPlayerId(string id)
-        {
-            PlayerId = id.Trim().ToLower();
-            Save();
+            Debug.Log($"[KSPClub] Config: playerId={PlayerId} agency={AgencyName} " +
+                      $"repo={RepoOwner}/{RepoName}");
         }
 
         public GitHubClient MakeClient() =>
@@ -302,6 +383,7 @@ namespace KSPClub
             if (node == null) return;
 
             PlayerId       = node.GetValue("playerId")      ?? "";
+            AgencyName     = node.GetValue("agencyName")    ?? "";
             GitHubToken    = node.GetValue("githubToken")   ?? "";
             RepoOwner      = node.GetValue("repoOwner")     ?? "wadeolsson";
             RepoName       = node.GetValue("repoName")      ?? "ksp-club-saves";
@@ -309,7 +391,7 @@ namespace KSPClub
             _lastOutputSha = node.GetValue("lastOutputSha") ?? "";
 
             if (!string.IsNullOrEmpty(PlayerId))
-                Debug.Log($"[KSPClub] Config loaded: playerId={PlayerId} sync={SyncConfigured}");
+                Debug.Log($"[KSPClub] Config loaded: {PlayerId} / {AgencyName}");
         }
 
         public void Save()
@@ -317,6 +399,7 @@ namespace KSPClub
             Directory.CreateDirectory(Path.GetDirectoryName(ConfigPath)!);
             ConfigNode node = new ConfigNode("KSPCLUB_PLAYER");
             node.AddValue("playerId",      PlayerId);
+            node.AddValue("agencyName",    AgencyName);
             node.AddValue("githubToken",   GitHubToken);
             node.AddValue("repoOwner",     RepoOwner);
             node.AddValue("repoName",      RepoName);
@@ -327,7 +410,7 @@ namespace KSPClub
 
         // ------------------------------------------------------------------ utilities
 
-        private static void ShowError(string message)
+        internal static void ShowError(string message)
         {
             PopupDialog.SpawnPopupDialog(
                 new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),

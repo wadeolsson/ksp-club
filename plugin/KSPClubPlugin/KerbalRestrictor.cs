@@ -14,6 +14,8 @@ namespace KSPClub
     [KSPAddon(KSPAddon.Startup.SpaceCentre, false)]
     public class KerbalRestrictor : MonoBehaviour
     {
+        public static bool IsStockKerbal(string name) => StockKerbals.Contains(name);
+
         private static readonly HashSet<string> StockKerbals = new HashSet<string>
         {
             "Jebediah Kerman",
