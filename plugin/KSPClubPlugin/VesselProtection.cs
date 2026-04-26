@@ -1,74 +1,18 @@
+using System.Collections;
 using KSP.UI.Screens;
 using UnityEngine;
 
 namespace KSPClub
 {
     // -------------------------------------------------------------------------
-    // Flight scene — block recovery of vessels belonging to other players.
+    // Tracking Station — disable Fly/Recover/Delete for non-owned vessels.
     // -------------------------------------------------------------------------
 
     /// <summary>
-    /// Prevents the recovery dialog from completing for non-owned vessels.
-    /// Hooks both the recovery request and the dialog spawn so the block works
-    /// whether triggered from the nav-ball recover button or a landing prompt.
-    /// </summary>
-    [KSPAddon(KSPAddon.Startup.Flight, false)]
-    public class VesselProtectionFlight : MonoBehaviour
-    {
-        void Start()
-        {
-            GameEvents.onGUIRecoveryDialogSpawn.Add(OnRecoveryDialog);
-            GameEvents.OnVesselRecoveryRequested.Add(OnRecoveryRequested);
-        }
-
-        void OnDestroy()
-        {
-            GameEvents.onGUIRecoveryDialogSpawn.Remove(OnRecoveryDialog);
-            GameEvents.OnVesselRecoveryRequested.Remove(OnRecoveryRequested);
-        }
-
-        void OnRecoveryRequested(Vessel vessel)
-        {
-            if (vessel == null) return;
-            if (IsOwned(vessel.persistentId)) return;
-
-            ScreenMessages.PostScreenMessage(
-                $"[KSP CLUB] Cannot recover '{vessel.vesselName}' — " +
-                "this vessel belongs to another player.",
-                5f, ScreenMessageStyle.UPPER_CENTER);
-        }
-
-        void OnRecoveryDialog(MissionRecoveryDialog dialog)
-        {
-            var vessel = FlightGlobals.ActiveVessel;
-            if (vessel == null || IsOwned(vessel.persistentId)) return;
-
-            // Destroy the dialog before the player can confirm recovery
-            Destroy(dialog.gameObject);
-
-            ScreenMessages.PostScreenMessage(
-                $"[KSP CLUB] Recovery blocked — '{vessel.vesselName}' " +
-                "belongs to another player.",
-                5f, ScreenMessageStyle.UPPER_CENTER);
-
-            Debug.Log($"[KSPClub] Blocked recovery of '{vessel.vesselName}' " +
-                      $"(persistentId={vessel.persistentId}) — not owned by this player.");
-        }
-
-        static bool IsOwned(uint pid) =>
-            KSPClubScenario.Instance?.OwnsVessel(pid) ?? true;
-    }
-
-    // -------------------------------------------------------------------------
-    // Tracking Station — warn on non-owned vessel selection, log terminations.
-    // -------------------------------------------------------------------------
-
-    /// <summary>
-    /// Shows a warning whenever a non-owned vessel is selected in the tracking
-    /// station, and logs an alert if one is terminated.
-    ///
-    /// Full termination prevention requires Harmony (not included). The warning
-    /// is prominent enough to prevent accidental termination in practice.
+    /// Disables the Fly, Recover, and Delete buttons whenever a vessel that
+    /// doesn't belong to this player is selected in the tracking station.
+    /// KSP naturally restores button states when the player selects a different
+    /// vessel, so we only need to override in the non-owned direction.
     /// </summary>
     [KSPAddon(KSPAddon.Startup.TrackingStation, false)]
     public class VesselProtectionTracking : MonoBehaviour
@@ -99,15 +43,28 @@ namespace KSPClub
             if (vessel == null) return;
 
             var scenario = KSPClubScenario.Instance;
-            if (scenario == null || scenario.OwnsVessel(vessel.persistentId)) return;
+            bool owned   = scenario == null || scenario.OwnsVessel(vessel.persistentId);
 
-            ScreenMessages.PostScreenMessage(
-                $"[KSP CLUB] '{vessel.vesselName}' belongs to another player.\n" +
-                "Do NOT terminate or recover this vessel.",
-                5f, ScreenMessageStyle.UPPER_CENTER);
+            SetActionButtons(station, owned);
 
-            Debug.Log($"[KSPClub] Non-owned vessel selected in tracking station: " +
-                      $"'{vessel.vesselName}' (persistentId={vessel.persistentId})");
+            if (!owned)
+            {
+                string owner = vessel.GetDisplayName(); // future: show actual owner
+                ScreenMessages.PostScreenMessage(
+                    $"[KSP CLUB] '{vessel.vesselName}' belongs to another player.\n" +
+                    "Fly, recover, and delete are disabled.",
+                    4f, ScreenMessageStyle.UPPER_CENTER);
+
+                Debug.Log($"[KSPClub] Locked action buttons for non-owned vessel " +
+                          $"'{vessel.vesselName}' (id={vessel.persistentId})");
+            }
+        }
+
+        static void SetActionButtons(SpaceTracking station, bool interactable)
+        {
+            if (station.FlyButton    != null) station.FlyButton.interactable    = interactable;
+            if (station.RecoverButton != null) station.RecoverButton.interactable = interactable;
+            if (station.DeleteButton  != null) station.DeleteButton.interactable  = interactable;
         }
 
         void OnVesselTerminated(ProtoVessel vessel)
@@ -115,15 +72,115 @@ namespace KSPClub
             var scenario = KSPClubScenario.Instance;
             if (scenario == null || scenario.OwnsVessel(vessel.persistentId)) return;
 
-            // Can't undo termination without Harmony, but make the violation very visible
             Debug.LogError($"[KSPClub] CLUB VIOLATION: '{vessel.vesselName}' " +
-                           $"(persistentId={vessel.persistentId}) was terminated " +
-                           "but does not belong to this player!");
+                           $"(id={vessel.persistentId}) was terminated but does not " +
+                           "belong to this player!");
 
             ScreenMessages.PostScreenMessage(
-                $"[KSP CLUB] ⚠ '{vessel.vesselName}' (not yours) was terminated!\n" +
+                $"[KSP CLUB] WARNING: '{vessel.vesselName}' (not yours) was terminated!\n" +
                 "Notify your game master immediately.",
                 15f, ScreenMessageStyle.UPPER_CENTER);
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Flight — eject player if they somehow enter flight with a non-owned vessel.
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// If a player enters flight or switches to a vessel they don't own,
+    /// show a message and return them to the tracking station.
+    ///
+    /// Also blocks the recovery dialog for non-owned vessels.
+    /// </summary>
+    [KSPAddon(KSPAddon.Startup.Flight, false)]
+    public class VesselProtectionFlight : MonoBehaviour
+    {
+        void Start()
+        {
+            GameEvents.onGUIRecoveryDialogSpawn.Add(OnRecoveryDialog);
+            GameEvents.OnVesselRecoveryRequested.Add(OnRecoveryRequested);
+            GameEvents.onVesselChange.Add(OnVesselChange);
+
+            // Check the vessel we loaded into — delay to let VesselTagger claim first
+            StartCoroutine(CheckOnLoad());
+        }
+
+        void OnDestroy()
+        {
+            GameEvents.onGUIRecoveryDialogSpawn.Remove(OnRecoveryDialog);
+            GameEvents.OnVesselRecoveryRequested.Remove(OnRecoveryRequested);
+            GameEvents.onVesselChange.Remove(OnVesselChange);
+        }
+
+        // ------------------------------------------------------------------ vessel control
+
+        IEnumerator CheckOnLoad()
+        {
+            yield return new WaitForSeconds(1f); // let VesselTagger claim new vessels first
+            var vessel = FlightGlobals.ActiveVessel;
+            if (vessel != null) CheckControl(vessel);
+        }
+
+        void OnVesselChange(Vessel vessel)
+        {
+            if (vessel != null) StartCoroutine(CheckAfterChange(vessel));
+        }
+
+        IEnumerator CheckAfterChange(Vessel vessel)
+        {
+            yield return new WaitForSeconds(0.5f);
+            if (vessel.isActiveVessel) CheckControl(vessel);
+        }
+
+        void CheckControl(Vessel vessel)
+        {
+            if (IsOwned(vessel.persistentId)) return;
+            StartCoroutine(EjectToTrackingStation(vessel.vesselName));
+        }
+
+        IEnumerator EjectToTrackingStation(string vesselName)
+        {
+            ScreenMessages.PostScreenMessage(
+                $"[KSP CLUB] You cannot fly '{vesselName}' — " +
+                "this vessel belongs to another player.",
+                3f, ScreenMessageStyle.UPPER_CENTER);
+
+            Debug.Log($"[KSPClub] Ejecting to tracking station — " +
+                      $"'{vesselName}' is not owned by this player.");
+
+            yield return new WaitForSeconds(3f);
+            HighLogic.LoadScene(GameScenes.TRACKSTATION);
+        }
+
+        // ------------------------------------------------------------------ recovery block
+
+        void OnRecoveryRequested(Vessel vessel)
+        {
+            if (vessel == null || IsOwned(vessel.persistentId)) return;
+
+            ScreenMessages.PostScreenMessage(
+                $"[KSP CLUB] Cannot recover '{vessel.vesselName}' — " +
+                "this vessel belongs to another player.",
+                5f, ScreenMessageStyle.UPPER_CENTER);
+        }
+
+        void OnRecoveryDialog(MissionRecoveryDialog dialog)
+        {
+            var vessel = FlightGlobals.ActiveVessel;
+            if (vessel == null || IsOwned(vessel.persistentId)) return;
+
+            Destroy(dialog.gameObject);
+
+            ScreenMessages.PostScreenMessage(
+                $"[KSP CLUB] Recovery blocked — '{vessel.vesselName}' " +
+                "belongs to another player.",
+                5f, ScreenMessageStyle.UPPER_CENTER);
+        }
+
+        // ------------------------------------------------------------------ helpers
+
+        static bool IsOwned(uint pid) =>
+            KSPClubScenario.Instance?.OwnsVessel(pid) ?? true;
     }
 }
