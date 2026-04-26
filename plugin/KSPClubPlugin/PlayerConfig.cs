@@ -83,7 +83,9 @@ namespace KSPClub
             // --- main menu: setup dialog + new-save check
             if (scene == GameScenes.MAINMENU)
             {
-                if (string.IsNullOrEmpty(PlayerId) || string.IsNullOrEmpty(GitHubToken))
+                if (string.IsNullOrEmpty(PlayerId) ||
+                    string.IsNullOrEmpty(GitHubToken) ||
+                    string.IsNullOrEmpty(AgencyName))
                     StartCoroutine(DelayThen(2f, ShowSetupDialog));
                 else if (!_checkedThisSession && SyncConfigured)
                 {
