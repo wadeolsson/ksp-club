@@ -61,6 +61,11 @@ namespace KSPClub
         void ShowSyncDialog()
         {
             var cfg = PlayerConfig.Instance;
+            if (cfg == null)
+            {
+                Debug.LogError("[KSPClub] PlayerConfig.Instance is null in ShowSyncDialog");
+                return;
+            }
 
             PopupDialog.SpawnPopupDialog(
                 new Vector2(0.5f, 0.5f),
@@ -77,7 +82,7 @@ namespace KSPClub
                     HighLogic.UISkin,
                     380f,
                     new DialogGUIButton("Submit My Save", OnSubmitClicked),
-                    new DialogGUIButton("Settings", cfg.ShowSetupDialog, true),
+                    new DialogGUIButton("Settings", () => PlayerConfig.Instance?.ShowSetupDialog(), true),
                     new DialogGUIButton("Close", null, false)
                 ),
                 false,

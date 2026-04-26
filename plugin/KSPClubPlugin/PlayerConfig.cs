@@ -162,7 +162,13 @@ namespace KSPClub
             if (string.IsNullOrEmpty(PlayerId)) return;
 
             var scenario = KSPClubScenario.Instance;
-            if (scenario == null) return;
+            if (scenario == null)
+            {
+                Debug.LogWarning("[KSPClub] OnGameStateSave: ClubScenario is null — cannot stamp");
+                return;
+            }
+            Debug.Log($"[KSPClub] OnGameStateSave: scenario owns " +
+                      $"{scenario.OwnedVesselCount} vessel(s), {scenario.OwnedKerbalCount} Kerbal(s)");
 
             int vesselTagged = 0;
             int kerbalTagged = 0;
