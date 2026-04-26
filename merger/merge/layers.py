@@ -38,22 +38,22 @@ PERSISTENT_SCENARIOS: frozenset[str] = frozenset({
     "ScenarioNewGameIntro",
     "DeployedScience",        # player's own deployed science instruments
     "SCANcontroller",         # player's own map scan data
-    "KSPClubScenario",        # plugin's owned-vessel-IDs list
-    "ScenarioUpgradeableFacilities",  # each player upgrades their own KSC buildings
-    "StrategySystem",                 # each player manages their own admin strategies
+    "KSPClubScenario",               # plugin's owned-vessel-IDs list
+    "ScenarioUpgradeableFacilities", # each player upgrades their own KSC buildings
+    "StrategySystem",                # each player manages their own admin strategies
+    "ScenarioCustomWaypoints",       # each player sets their own waypoints
+    "ScenarioContractEvents",        # each player's own mission control event log
+    "SentinelScenario",              # each player manages their own sentinel targets
 })
 
 # These scenarios describe the shared world state and come from the universal state.
 DYNAMIC_SCENARIOS: frozenset[str] = frozenset({
-    "ROCScenario",
-    "ResourceScenario",
-    "ScenarioCustomWaypoints",
-    "ScenarioDestructibles",
-    "ScenarioDiscoverableObjects",
-    "ScenarioContractEvents",
-    "SentinelScenario",
-    "CommNetScenario",
-    "KPBSScenario",
+    "ROCScenario",               # world surface features
+    "ResourceScenario",          # world resource seed / settings
+    "ScenarioDestructibles",     # shared building damage state
+    "ScenarioDiscoverableObjects", # shared asteroid / comet spawning
+    "CommNetScenario",           # shared communications network
+    "KPBSScenario",              # shared planetary base systems world state
 })
 
 # Base-game named Kerbals that ship with KSP. These are never player-owned;
