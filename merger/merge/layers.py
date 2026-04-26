@@ -39,6 +39,8 @@ PERSISTENT_SCENARIOS: frozenset[str] = frozenset({
     "DeployedScience",        # player's own deployed science instruments
     "SCANcontroller",         # player's own map scan data
     "KSPClubScenario",        # plugin's owned-vessel-IDs list
+    "ScenarioUpgradeableFacilities",  # each player upgrades their own KSC buildings
+    "StrategySystem",                 # each player manages their own admin strategies
 })
 
 # These scenarios describe the shared world state and come from the universal state.
@@ -48,8 +50,6 @@ DYNAMIC_SCENARIOS: frozenset[str] = frozenset({
     "ScenarioCustomWaypoints",
     "ScenarioDestructibles",
     "ScenarioDiscoverableObjects",
-    "ScenarioUpgradeableFacilities",
-    "StrategySystem",
     "ScenarioContractEvents",
     "SentinelScenario",
     "CommNetScenario",
