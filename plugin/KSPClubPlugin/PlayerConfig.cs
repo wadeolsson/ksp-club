@@ -21,6 +21,9 @@ namespace KSPClub
         // player identity
         public string PlayerId    { get; private set; } = "";
         public string AgencyName  { get; private set; } = "";
+        public string ColorName   { get; private set; } = "blue";
+        public Color  PlayerColor => OrbitColorsBase.Presets.TryGetValue(ColorName, out var c)
+                                     ? c : OrbitColorsBase.Presets["blue"];
 
         // GitHub sync settings
         public string GitHubToken { get; private set; } = "";
@@ -115,15 +118,28 @@ namespace KSPClub
             int kerbalsClaimed = 0;
 
             // Vessels: claim those tagged as ours or with no tag at all
+            // Also populate the orbit color cache for all vessels
             var flightState = gameNode.GetNode("FLIGHTSTATE");
             if (flightState != null)
             {
                 foreach (ConfigNode vesselNode in flightState.GetNodes("VESSEL"))
                 {
-                    string vid = vesselNode.GetValue("playerID") ?? "";
+                    string vid      = vesselNode.GetValue("playerID") ?? "";
+                    string colorStr = vesselNode.GetValue("playerColor") ?? "";
+                    uint   pid      = 0;
+                    uint.TryParse(vesselNode.GetValue("persistentId"), out pid);
+
+                    // Cache the vessel's stamped color so OrbitColors can use it
+                    if (pid != 0 && !string.IsNullOrEmpty(colorStr))
+                    {
+                        Color c = OrbitColorsBase.ParseColor(colorStr);
+                        if (c != Color.clear)
+                            OrbitColorsBase.VesselColorCache[pid] = c;
+                    }
+
                     if (vid == PlayerId || vid == "")
                     {
-                        if (uint.TryParse(vesselNode.GetValue("persistentId"), out uint pid))
+                        if (pid != 0)
                         {
                             scenario.ClaimVessel(pid);
                             vesselsClaimed++;
@@ -178,8 +194,11 @@ namespace KSPClub
                 data.to.AddValue("agencyName", AgencyName);
             }
 
+            data.to.RemoveValue("playerColor");
+            data.to.AddValue("playerColor", OrbitColorsBase.ColorToString(PlayerColor));
+
             Debug.Log($"[KSPClub] Stamped vessel '{data.from.vesselName}' " +
-                      $"playerID={PlayerId} agencyName={AgencyName}");
+                      $"playerID={PlayerId} color={ColorName}");
         }
 
         // Stamps Kerbals — roster is available in the full game node.
@@ -308,6 +327,7 @@ namespace KSPClub
         {
             string inputId     = PlayerId;
             string inputAgency = AgencyName;
+            string inputColor  = ColorName;
             string inputToken  = GitHubToken;
             string inputOwner  = RepoOwner;
             string inputRepo   = RepoName;
@@ -329,6 +349,9 @@ namespace KSPClub
                     new DialogGUILabel("<b>Agency Name</b>  (your space agency name)"),
                     new DialogGUITextInput(inputAgency, "e.g. Olsson Aerospace", false, 64,
                         s => { inputAgency = s; return s; }, 28f),
+                    new DialogGUILabel("<b>Orbit Color</b>  (blue/red/green/orange/purple/yellow/cyan/pink)"),
+                    new DialogGUITextInput(inputColor, "blue", false, 16,
+                        s => { inputColor = s; return s; }, 28f),
                     new DialogGUILabel("<b>GitHub Token</b>  (fine-grained PAT, repo Contents R/W)"),
                     new DialogGUITextInput(inputToken, "github_pat_...", true, 200,
                         s => { inputToken = s; return s; }, 28f),
@@ -344,7 +367,7 @@ namespace KSPClub
                     new DialogGUITextInput(inputSave, "KSP_CLUB", false, 32,
                         s => { inputSave = s; return s; }, 28f),
                     new DialogGUIButton("Save", () =>
-                        SetConfig(inputId, inputAgency, inputToken,
+                        SetConfig(inputId, inputAgency, inputColor, inputToken,
                                   inputOwner, inputRepo, inputSave)),
                     new DialogGUIButton("Cancel", null, false)
                 ),
@@ -353,11 +376,13 @@ namespace KSPClub
 
         // ------------------------------------------------------------------ config management
 
-        public void SetConfig(string id, string agency, string token,
+        public void SetConfig(string id, string agency, string color, string token,
                               string owner, string repo, string saveName)
         {
             PlayerId    = id.Trim().ToLower();
             AgencyName  = agency.Trim();
+            ColorName   = OrbitColorsBase.Presets.ContainsKey(color.Trim().ToLower())
+                          ? color.Trim().ToLower() : "blue";
             GitHubToken = token.Trim();
             RepoOwner   = owner.Trim();
             RepoName    = repo.Trim();
@@ -435,6 +460,7 @@ namespace KSPClub
 
             PlayerId       = node.GetValue("playerId")      ?? "";
             AgencyName     = node.GetValue("agencyName")    ?? "";
+            ColorName      = node.GetValue("colorName")     ?? "blue";
             GitHubToken    = node.GetValue("githubToken")   ?? "";
             RepoOwner      = node.GetValue("repoOwner")     ?? "wadeolsson";
             RepoName       = node.GetValue("repoName")      ?? "ksp-club-saves";
@@ -451,6 +477,7 @@ namespace KSPClub
             ConfigNode node = new ConfigNode("KSPCLUB_PLAYER");
             node.AddValue("playerId",      PlayerId);
             node.AddValue("agencyName",    AgencyName);
+            node.AddValue("colorName",     ColorName);
             node.AddValue("githubToken",   GitHubToken);
             node.AddValue("repoOwner",     RepoOwner);
             node.AddValue("repoName",      RepoName);
