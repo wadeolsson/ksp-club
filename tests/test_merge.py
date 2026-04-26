@@ -678,7 +678,8 @@ def test_build_merged_kerbals_in_each_save():
     for player_id, root in rebuilt.items():
         roster = root.get_child("GAME").get_child("ROSTER")
         names = [k.get("name") for k in roster.get_children("KERBAL")]
-        assert "Jebediah Kerman" in names
+        # Stock Kerbals (Jeb etc.) are excluded from club saves intentionally
+        assert "Jebediah Kerman" not in names
         assert "Wade Kerman" in names
         assert "Ed Kerman" in names
 

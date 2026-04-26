@@ -92,15 +92,11 @@ def extract(root: Node, player_id: str, claim_untagged: bool = True) -> PlayerCo
     """
     Extract a PlayerContribution from a parsed save file.
 
-    Args:
-        root:           ROOT node returned by parse()
-        player_id:      the submitting player's ID (e.g. "wade")
-        claim_untagged: if True, vessels/Kerbals with no playerID are treated
-                        as owned by this player (needed before the plugin is
-                        installed; set False once all players have the plugin)
-
-    Returns:
-        PlayerContribution with the player's vessels, Kerbals, and scenarios.
+    Ownership is determined in priority order:
+      1. KSPClubScenario.OWNED_VESSELS / OWNED_KERBALS (most reliable — written
+         by the plugin's in-memory tracking, survives before playerID stamp works)
+      2. playerID field stamped on the vessel/Kerbal node by the plugin
+      3. No playerID → claim_untagged fallback (pre-plugin saves)
     """
     game = root.get_child("GAME")
     if game is None:
@@ -122,35 +118,41 @@ def extract(root: Node, player_id: str, claim_untagged: bool = True) -> PlayerCo
     except ValueError:
         contrib.warnings.append("Could not parse UT value; defaulting to 0")
 
+    # Read authoritative ownership lists from KSPClubScenario if present
+    owned_vessel_ids, owned_kerbal_names = _read_club_scenario(game)
+
     # --- vessels ---
     for vessel in fs.get_children("VESSEL"):
+        pid = vessel.get("persistentId", "")
         vid = vessel.get("playerID", "")
-        if vid == player_id:
+
+        if pid in owned_vessel_ids:
             contrib.vessels.append(vessel)
-        elif vid == "":
+        elif vid == player_id:
+            contrib.vessels.append(vessel)
+        elif vid == "" and pid not in owned_vessel_ids:
             if claim_untagged:
                 contrib.vessels.append(vessel)
                 contrib.warnings.append(
                     f"Vessel '{vessel.get('name', '?')}' has no playerID — "
                     f"claimed for {player_id}. Install the plugin to fix this."
                 )
-            # else: belongs to someone else, skip
-        # else: belongs to a different player, skip (their own submission has it)
 
     # --- Kerbals ---
     roster = game.get_child("ROSTER")
     if roster:
         for kerbal in roster.get_children("KERBAL"):
             name = kerbal.get("name", "")
-            kid = kerbal.get("playerID", "")
+            kid  = kerbal.get("playerID", "")
 
             if name in STOCK_KERBALS:
-                # Stock Kerbals always live in the dynamic/universal layer
-                continue
+                continue  # always dynamic layer
 
-            if kid == player_id:
+            if name in owned_kerbal_names:
                 contrib.kerbals.append(kerbal)
-            elif kid == "":
+            elif kid == player_id:
+                contrib.kerbals.append(kerbal)
+            elif kid == "" and name not in owned_kerbal_names:
                 if claim_untagged:
                     contrib.kerbals.append(kerbal)
                     contrib.warnings.append(
@@ -164,10 +166,29 @@ def extract(root: Node, player_id: str, claim_untagged: bool = True) -> PlayerCo
         if name in PERSISTENT_SCENARIOS:
             contrib.scenarios[name] = scenario
         elif name not in DYNAMIC_SCENARIOS:
-            # Unknown scenario — keep it in persistent layer to be safe
             contrib.scenarios[name] = scenario
             contrib.warnings.append(
                 f"Unknown SCENARIO '{name}' — treating as persistent (keeping with player)."
             )
 
     return contrib
+
+
+def _read_club_scenario(game: Node) -> tuple[set[str], set[str]]:
+    """
+    Read the KSPClubScenario block and return (owned_vessel_ids, owned_kerbal_names).
+    Both are sets of strings. Returns empty sets if the scenario is absent.
+    """
+    for scenario in game.get_children("SCENARIO"):
+        if scenario.get("name") != "KSPClubScenario":
+            continue
+        vessel_ids: set[str] = set()
+        owned_v = scenario.get_child("OWNED_VESSELS")
+        if owned_v:
+            vessel_ids = set(owned_v.get_all("id"))
+        kerbal_names: set[str] = set()
+        owned_k = scenario.get_child("OWNED_KERBALS")
+        if owned_k:
+            kerbal_names = set(owned_k.get_all("name"))
+        return vessel_ids, kerbal_names
+    return set(), set()

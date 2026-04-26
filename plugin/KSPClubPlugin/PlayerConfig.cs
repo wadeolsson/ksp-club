@@ -374,6 +374,57 @@ namespace KSPClub
         public GitHubClient MakeClient() =>
             new GitHubClient(GitHubToken, RepoOwner, RepoName);
 
+        /// <summary>
+        /// Post-process a saved .sfs file to stamp playerID + agencyName into
+        /// KERBAL nodes. Uses KSP's own ConfigNode parser so no custom parser needed.
+        /// Call this after GamePersistence.SaveGame has written the file to disk.
+        /// </summary>
+        public void StampKerbalsInFile(string filePath)
+        {
+            if (string.IsNullOrEmpty(PlayerId) || !File.Exists(filePath)) return;
+
+            var scenario = KSPClubScenario.Instance;
+            if (scenario == null || scenario.OwnedKerbalCount == 0) return;
+
+            try
+            {
+                ConfigNode root = ConfigNode.Load(filePath);
+                if (root == null) return;
+
+                ConfigNode? game   = root.GetNode("GAME");
+                ConfigNode? roster = game?.GetNode("ROSTER");
+                if (roster == null) return;
+
+                int tagged = 0;
+                foreach (ConfigNode kerbalNode in roster.GetNodes("KERBAL"))
+                {
+                    string name = kerbalNode.GetValue("name") ?? "";
+                    if (!scenario.OwnsKerbal(name)) continue;
+
+                    kerbalNode.RemoveValue("playerID");
+                    kerbalNode.AddValue("playerID", PlayerId);
+
+                    if (!string.IsNullOrEmpty(AgencyName))
+                    {
+                        kerbalNode.RemoveValue("agencyName");
+                        kerbalNode.AddValue("agencyName", AgencyName);
+                    }
+                    tagged++;
+                }
+
+                if (tagged > 0)
+                {
+                    root.Save(filePath);
+                    Debug.Log($"[KSPClub] Stamped {tagged} Kerbal(s) in file with " +
+                              $"playerID={PlayerId} agencyName={AgencyName}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[KSPClub] StampKerbalsInFile failed: {ex.Message}");
+            }
+        }
+
         // ------------------------------------------------------------------ persistence
 
         void Load()

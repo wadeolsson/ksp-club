@@ -123,7 +123,10 @@ namespace KSPClub
                 yield break;
             }
 
-            // Step 2 — read the save file from disk
+            // Step 2 — stamp Kerbals into the file (no per-Kerbal save event in KSP)
+            PlayerConfig.Instance.StampKerbalsInFile(savedPath);
+
+            // Step 3 — read the save file from disk
             byte[]? saveData = null;
             try   { saveData = File.ReadAllBytes(savedPath); }
             catch (Exception ex)

@@ -18,7 +18,7 @@ from merger.sfs.parser import Node
 from merger.merge.layers import extract, PlayerContribution, DYNAMIC_SCENARIOS
 from merger.merge.time import advance_vessel
 from merger.merge.vessels import collect_vessels
-from merger.merge.kerbals import get_stock_kerbals, merge_kerbals
+from merger.merge.kerbals import merge_kerbals
 
 
 def build(
@@ -72,9 +72,8 @@ def build(
         from merger.merge.mods import validate_parts
         warnings.extend(validate_parts(contrib_list, allowed_parts))
 
-    # Step 5 — merge Kerbals
-    stock_kerbals = get_stock_kerbals(base_game)
-    merged_kerbals, kerbal_warnings = merge_kerbals(contrib_list, stock_kerbals)
+    # Step 5 — merge Kerbals (stock Kerbals excluded — club players use custom recruits)
+    merged_kerbals, kerbal_warnings = merge_kerbals(contrib_list, stock_kerbals=[])
     warnings.extend(kerbal_warnings)
 
     # Shared world: dynamic scenarios from the most-current submission
