@@ -41,9 +41,12 @@ namespace KSPClub
     public abstract class OrbitColorsBase : MonoBehaviour
     {
         // Populated from save data at load time: persistentId -> Color
-        // Set by PlayerConfig.ClaimExistingFromNode when it reads vessel nodes.
         public static readonly Dictionary<uint, Color> VesselColorCache
             = new Dictionary<uint, Color>();
+
+        // Populated from save data at load time: persistentId -> playerID string
+        public static readonly Dictionary<uint, string> VesselOwnerCache
+            = new Dictionary<uint, string>();
 
         // Named preset colors players can choose from
         public static readonly Dictionary<string, Color> Presets = new Dictionary<string, Color>
@@ -87,12 +90,23 @@ namespace KSPClub
                 scenario.OwnsVessel(vessel.persistentId))
                 return cfg.PlayerColor;
 
-            // Another player's vessel — use color cached from save load
-            if (VesselColorCache.TryGetValue(vessel.persistentId, out Color cached))
-                return cached;
+            // Determine relation to this vessel's owner
+            VesselOwnerCache.TryGetValue(vessel.persistentId, out string ownerId);
+            Relation relation = cfg?.GetRelation(ownerId ?? "") ?? Relation.Neutral;
 
-            // Fallback: deterministic hash of persistentId so it's stable for everyone
-            return HashColor(vessel.persistentId.ToString());
+            // Get the base color for this vessel
+            Color baseColor = VesselColorCache.TryGetValue(vessel.persistentId, out Color cached)
+                ? cached
+                : HashColor(vessel.persistentId.ToString());
+
+            // Apply relation-based modulation
+            return relation switch
+            {
+                Relation.Friendly => baseColor,                             // full brightness
+                Relation.Neutral  => Color.Lerp(baseColor, Color.gray, 0.35f), // slightly dimmed
+                Relation.Hostile  => new Color(0.55f, 0.05f, 0.05f, 0.4f), // dim red
+                _                 => baseColor,
+            };
         }
 
         public static Color ParseColor(string s)

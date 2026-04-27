@@ -82,8 +82,9 @@ namespace KSPClub
                     HighLogic.UISkin,
                     380f,
                     new DialogGUIButton("Submit My Save", OnSubmitClicked),
-                    new DialogGUIButton("Settings", () => PlayerConfig.Instance?.ShowSetupDialog(), true),
-                    new DialogGUIButton("Close", null, false)
+                    new DialogGUIButton("Relations",     ShowRelationsDialog, true),
+                    new DialogGUIButton("Settings",      () => PlayerConfig.Instance?.ShowSetupDialog(), true),
+                    new DialogGUIButton("Close",         null, false)
                 ),
                 false,
                 HighLogic.UISkin
@@ -94,6 +95,63 @@ namespace KSPClub
         {
             if (_submitting) return;
             StartCoroutine(SubmitSave());
+        }
+
+        // ------------------------------------------------------------------ relations dialog
+
+        void ShowRelationsDialog()
+        {
+            var cfg = PlayerConfig.Instance;
+            if (cfg == null) return;
+
+            var known = PlayerConfig.KnownPlayers;
+            if (known.Count == 0)
+            {
+                PopupDialog.SpawnPopupDialog(
+                    new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
+                    new MultiOptionDialog("KSPClubRelNone",
+                        "No other players detected in this save yet.\n\n" +
+                        "Load the latest merged save to see other agencies.",
+                        "KSP CLUB — Relations",
+                        HighLogic.UISkin,
+                        new DialogGUIButton("OK", null, true)),
+                    false, HighLogic.UISkin);
+                return;
+            }
+
+            // Build one row per known player
+            var elements = new System.Collections.Generic.List<DialogGUIBase>();
+            elements.Add(new DialogGUILabel(
+                "Set your stance toward other agencies.\n" +
+                "Affects orbit brightness and future CommNet routing."));
+
+            foreach (var kv in known)
+            {
+                string pid    = kv.Key;
+                string agency = string.IsNullOrEmpty(kv.Value) ? pid : kv.Value;
+                Relation cur  = cfg.GetRelation(pid);
+
+                string label  = $"<b>{agency}</b>  —  currently: <b>{cur}</b>";
+                elements.Add(new DialogGUILabel(label));
+                elements.Add(new DialogGUIHorizontalLayout(
+                    new DialogGUIButton("Friendly", () => { cfg.SetRelation(pid, Relation.Friendly); ShowRelationsDialog(); }, true),
+                    new DialogGUIButton("Neutral",  () => { cfg.SetRelation(pid, Relation.Neutral);  ShowRelationsDialog(); }, true),
+                    new DialogGUIButton("Hostile",  () => { cfg.SetRelation(pid, Relation.Hostile);  ShowRelationsDialog(); }, true)
+                ));
+            }
+
+            elements.Add(new DialogGUIButton("Close", null, false));
+
+            PopupDialog.SpawnPopupDialog(
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
+                new MultiOptionDialog(
+                    "KSPClubRelations",
+                    "",
+                    "KSP CLUB — Diplomatic Relations",
+                    HighLogic.UISkin,
+                    420f,
+                    elements.ToArray()),
+                false, HighLogic.UISkin);
         }
 
         // ------------------------------------------------------------------ submission pipeline

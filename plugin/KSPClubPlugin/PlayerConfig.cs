@@ -37,6 +37,27 @@ namespace KSPClub
         // Pending game node cached from onGameStateLoad, processed after scene settles
         private ConfigNode? _pendingGameNode;
 
+        // Diplomatic relations toward other players
+        private readonly System.Collections.Generic.Dictionary<string, Relation> _relations
+            = new System.Collections.Generic.Dictionary<string, Relation>();
+
+        // Other players discovered from save data: playerId → agencyName
+        public static readonly System.Collections.Generic.Dictionary<string, string> KnownPlayers
+            = new System.Collections.Generic.Dictionary<string, string>();
+
+        public Relation GetRelation(string playerId)
+        {
+            if (playerId == PlayerId) return Relation.Friendly; // always friendly with yourself
+            return _relations.TryGetValue(playerId, out var r) ? r : Relation.Neutral;
+        }
+
+        public void SetRelation(string playerId, Relation relation)
+        {
+            _relations[playerId] = relation;
+            Save();
+            Debug.Log($"[KSPClub] Relation toward '{playerId}' set to {relation}");
+        }
+
         private static string ConfigPath =>
             Path.Combine(KSPUtil.ApplicationRootPath,
                 "GameData/KSPClubPlugin/PluginData/player.cfg");
@@ -129,12 +150,23 @@ namespace KSPClub
                     uint   pid      = 0;
                     uint.TryParse(vesselNode.GetValue("persistentId"), out pid);
 
-                    // Cache the vessel's stamped color so OrbitColors can use it
+                    // Cache vessel color for OrbitColors
                     if (pid != 0 && !string.IsNullOrEmpty(colorStr))
                     {
                         Color c = OrbitColorsBase.ParseColor(colorStr);
                         if (c != Color.clear)
                             OrbitColorsBase.VesselColorCache[pid] = c;
+                    }
+
+                    // Cache vessel owner + discover other players
+                    if (pid != 0 && !string.IsNullOrEmpty(vid))
+                    {
+                        OrbitColorsBase.VesselOwnerCache[pid] = vid;
+                        if (vid != PlayerId)
+                        {
+                            string agency = vesselNode.GetValue("agencyName") ?? "";
+                            KnownPlayers[vid] = agency;
+                        }
                     }
 
                     if (vid == PlayerId || vid == "")
@@ -467,8 +499,16 @@ namespace KSPClub
             SaveName       = node.GetValue("saveName")      ?? "KSP_CLUB";
             _lastOutputSha = node.GetValue("lastOutputSha") ?? "";
 
+            _relations.Clear();
+            ConfigNode? relNode = node.GetNode("RELATIONS");
+            if (relNode != null)
+                foreach (ConfigNode.Value v in relNode.values)
+                    if (System.Enum.TryParse<Relation>(v.value, out var r))
+                        _relations[v.name] = r;
+
             if (!string.IsNullOrEmpty(PlayerId))
-                Debug.Log($"[KSPClub] Config loaded: {PlayerId} / {AgencyName}");
+                Debug.Log($"[KSPClub] Config loaded: {PlayerId} / {AgencyName} " +
+                          $"({_relations.Count} relation(s))");
         }
 
         public void Save()
@@ -483,6 +523,12 @@ namespace KSPClub
             node.AddValue("repoName",      RepoName);
             node.AddValue("saveName",      SaveName);
             node.AddValue("lastOutputSha", _lastOutputSha);
+            if (_relations.Count > 0)
+            {
+                ConfigNode relNode = node.AddNode("RELATIONS");
+                foreach (var kvp in _relations)
+                    relNode.AddValue(kvp.Key, kvp.Value.ToString());
+            }
             node.Save(ConfigPath);
         }
 
