@@ -62,10 +62,13 @@ def build(
             w = advance_vessel(vessel, canonical_ut)
             warnings.extend(w)
 
-    # Step 4 — collect vessels (conflict check)
+    # Step 4 — collect vessels (conflict check) then remove old debris
     contrib_list = list(contributions.values())
     all_vessels, vessel_warnings = collect_vessels(contrib_list)
     warnings.extend(vessel_warnings)
+    all_vessels, debris_removed = _purge_old_debris(all_vessels, canonical_ut)
+    if debris_removed:
+        warnings.append(f"Removed {debris_removed} old debris vessel(s) from the universe.")
 
     # Part validation (optional)
     if allowed_parts:
@@ -215,6 +218,31 @@ def _copy_child(src: Node, dst: Node, name: str) -> None:
     child = src.get_child(name)
     if child is not None:
         dst.children.append(copy.deepcopy(child))
+
+
+def _purge_old_debris(
+    vessels: list[Node],
+    canonical_ut: float,
+    max_age_seconds: float = 21 * 6 * 3600,  # 21 KSP days
+) -> tuple[list[Node], int]:
+    """
+    Remove Debris-type vessels older than max_age_seconds from the vessel list.
+    Age is calculated as canonical_ut - lct (launch counter time = when it was created).
+    Returns (filtered_vessels, count_removed).
+    """
+    kept = []
+    removed = 0
+    for vessel in vessels:
+        if vessel.get("type", "") == "Debris":
+            try:
+                lct = float(vessel.get("lct", "0"))
+                if (canonical_ut - lct) > max_age_seconds:
+                    removed += 1
+                    continue
+            except ValueError:
+                pass
+        kept.append(vessel)
+    return kept, removed
 
 
 def _int_val(values: list[list[str]], key: str, default: int) -> int:

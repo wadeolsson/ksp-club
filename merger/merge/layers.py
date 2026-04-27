@@ -126,6 +126,10 @@ def extract(root: Node, player_id: str, claim_untagged: bool = True) -> PlayerCo
         pid = vessel.get("persistentId", "")
         vid = vessel.get("playerID", "")
 
+        # Skip PRELAUNCH — vessel hasn't left the pad, shouldn't be in the shared universe
+        if vessel.get("sit", "") == "PRELAUNCH":
+            continue
+
         if pid in owned_vessel_ids:
             contrib.vessels.append(vessel)
         elif vid == player_id:
