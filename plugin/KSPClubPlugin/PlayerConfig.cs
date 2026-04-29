@@ -217,6 +217,21 @@ namespace KSPClub
 
             if (!scenario.OwnsVessel(data.from.persistentId)) return;
 
+            // Check for a pending transfer — stamp target instead of self
+            if (VesselTrading.PendingTransfers.TryGetValue(
+                    data.from.persistentId, out string transferTarget))
+            {
+                data.to.RemoveValue("playerID");
+                data.to.AddValue("playerID", PlayerId);  // still ours until merge
+                data.to.RemoveValue("transferTarget");
+                data.to.AddValue("transferTarget", transferTarget);
+                data.to.RemoveValue("playerColor");
+                data.to.AddValue("playerColor", OrbitColorsBase.ColorToString(PlayerColor));
+                VesselTrading.PendingTransfers.Remove(data.from.persistentId);
+                Debug.Log($"[KSPClub] Stamped transfer on '{data.from.vesselName}' → {transferTarget}");
+                return;
+            }
+
             data.to.RemoveValue("playerID");
             data.to.AddValue("playerID", PlayerId);
 

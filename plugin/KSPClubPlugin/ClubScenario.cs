@@ -72,6 +72,12 @@ namespace KSPClub
                 UnityEngine.Debug.Log($"[KSPClub] Claimed vessel persistentId={persistentId}");
         }
 
+        public void ReleaseVessel(uint persistentId)
+        {
+            if (_ownedVesselIds.Remove(persistentId))
+                UnityEngine.Debug.Log($"[KSPClub] Released vessel persistentId={persistentId}");
+        }
+
         public bool OwnsVessel(uint persistentId) => _ownedVesselIds.Contains(persistentId);
 
         public int OwnedVesselCount => _ownedVesselIds.Count;

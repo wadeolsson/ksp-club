@@ -130,6 +130,19 @@ def extract(root: Node, player_id: str, claim_untagged: bool = True) -> PlayerCo
         if vessel.get("sit", "") == "PRELAUNCH":
             continue
 
+        # Vessel transfer: player has gifted this vessel to someone else.
+        # Change ownership now so it lands in the target's save after this merge.
+        transfer_target = vessel.get("transferTarget", "")
+        if transfer_target and (pid in owned_vessel_ids or vid == player_id):
+            vessel.set("playerID", transfer_target)
+            vessel.remove("transferTarget")
+            contrib.vessels.append(vessel)
+            contrib.warnings.append(
+                f"Vessel '{vessel.get('name', '?')}' transferred from "
+                f"{player_id} → {transfer_target}."
+            )
+            continue
+
         if pid in owned_vessel_ids:
             contrib.vessels.append(vessel)
         elif vid == player_id:
