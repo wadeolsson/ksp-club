@@ -57,12 +57,12 @@ namespace KSPClub
                 _tankerIcon = new Texture2D(raw.width, raw.height, TextureFormat.RGBA32, false);
                 _tankerIcon.SetPixels(raw.GetPixels());
 
-                // Make near-black pixels transparent (the icon has a dark background)
+                // Make near-white pixels transparent (the icon has a white background)
                 var pixels = _tankerIcon.GetPixels32();
                 for (int i = 0; i < pixels.Length; i++)
                 {
                     var p = pixels[i];
-                    if (p.r < 40 && p.g < 40 && p.b < 40)
+                    if (p.r > 215 && p.g > 215 && p.b > 215)
                         pixels[i].a = 0;
                 }
                 _tankerIcon.SetPixels32(pixels);
