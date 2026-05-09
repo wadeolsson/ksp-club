@@ -73,6 +73,18 @@ STOCK_KERBALS: frozenset[str] = frozenset({
 
 
 @dataclass
+class FuelTransaction:
+    """A fuel purchase recorded by the plugin during gameplay."""
+    buyer:      str
+    seller:     str
+    resource:   str
+    amount:     float
+    total_cost: float
+    tanker_pid: str   # persistentId of the tanker vessel as a string
+    timestamp:  float
+
+
+@dataclass
 class PlayerContribution:
     """
     Everything extracted from one player's save submission that belongs to them.
@@ -85,6 +97,7 @@ class PlayerContribution:
     vessels: list[Node] = field(default_factory=list)
     kerbals: list[Node] = field(default_factory=list)
     scenarios: dict[str, Node] = field(default_factory=dict)  # name -> Node
+    transactions: list[FuelTransaction] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
 
@@ -187,6 +200,28 @@ def extract(root: Node, player_id: str, claim_untagged: bool = True) -> PlayerCo
             contrib.warnings.append(
                 f"Unknown SCENARIO '{name}' — treating as persistent (keeping with player)."
             )
+
+    # --- fuel transactions from KSPClubScenario ---
+    for scenario in game.get_children("SCENARIO"):
+        if scenario.get("name") != "KSPClubScenario":
+            continue
+        txs = scenario.get_child("TRANSACTIONS")
+        if not txs:
+            break
+        for tx in txs.get_children("TX"):
+            try:
+                contrib.transactions.append(FuelTransaction(
+                    buyer=tx.get("buyer", ""),
+                    seller=tx.get("seller", ""),
+                    resource=tx.get("resource", ""),
+                    amount=float(tx.get("amount", "0")),
+                    total_cost=float(tx.get("totalCost", "0")),
+                    tanker_pid=tx.get("tankerPid", ""),
+                    timestamp=float(tx.get("timestamp", "0")),
+                ))
+            except ValueError:
+                contrib.warnings.append("Could not parse a fuel transaction — skipping.")
+        break
 
     return contrib
 

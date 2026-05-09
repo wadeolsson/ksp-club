@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import copy
 from merger.sfs.parser import Node
-from merger.merge.layers import extract, PlayerContribution, DYNAMIC_SCENARIOS
+from merger.merge.layers import extract, PlayerContribution, FuelTransaction, DYNAMIC_SCENARIOS
 from merger.merge.time import advance_vessel
 from merger.merge.vessels import collect_vessels
 from merger.merge.kerbals import merge_kerbals
@@ -106,12 +106,113 @@ def build(
             all_vessels, merged_kerbals, dynamic_scenarios, max_launch_id,
         )
 
+    # Step 8 — process fuel transactions (debit buyer, credit seller, reduce tanker fuel)
+    tx_warnings = _process_transactions(contributions, rebuilt, all_vessels)
+    warnings.extend(tx_warnings)
+
     return universal, rebuilt, warnings
 
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+def _process_transactions(
+    contributions: dict[str, PlayerContribution],
+    rebuilt: dict[str, Node],
+    all_vessels: list[Node],
+) -> list[str]:
+    """
+    Apply all fuel transactions from all submissions:
+      - Debit buyer's Funding scenario in their rebuilt save
+      - Credit seller's Funding scenario in their rebuilt save
+      - Reduce tanker vessel fuel in the universal vessel list
+    Returns a list of info/warning strings.
+    """
+    messages: list[str] = []
+
+    # Collect all transactions from every submission
+    all_tx: list[FuelTransaction] = []
+    for contrib in contributions.values():
+        all_tx.extend(contrib.transactions)
+
+    if not all_tx:
+        return messages
+
+    # Build funding node lookup: player_id → Funding Node in their rebuilt save
+    funding: dict[str, Node] = {}
+    for pid, save_root in rebuilt.items():
+        game = save_root.get_child("GAME")
+        if game:
+            for s in game.get_children("SCENARIO"):
+                if s.get("name") == "Funding":
+                    funding[pid] = s
+                    break
+
+    # Build vessel lookup: persistentId string → Node
+    vessels_by_pid: dict[str, Node] = {
+        v.get("persistentId"): v for v in all_vessels
+        if v.get("persistentId")
+    }
+
+    for tx in all_tx:
+        if not tx.buyer or not tx.seller or not tx.resource or tx.total_cost <= 0:
+            continue
+
+        # Debit buyer
+        if tx.buyer in funding:
+            try:
+                cur = float(funding[tx.buyer].get("funds", "0"))
+                funding[tx.buyer].set("funds", repr(max(0.0, cur - tx.total_cost)))
+            except ValueError:
+                messages.append(f"Transaction: could not read {tx.buyer}'s funds")
+
+        # Credit seller
+        if tx.seller in funding:
+            try:
+                cur = float(funding[tx.seller].get("funds", "0"))
+                funding[tx.seller].set("funds", repr(cur + tx.total_cost))
+            except ValueError:
+                messages.append(f"Transaction: could not read {tx.seller}'s funds")
+
+        # Reduce tanker fuel
+        tanker = vessels_by_pid.get(tx.tanker_pid)
+        if tanker:
+            removed = _reduce_vessel_fuel(tanker, tx.resource, tx.amount)
+            messages.append(
+                f"Fuel transaction: {tx.buyer} paid ◆{tx.total_cost:.0f} to {tx.seller} "
+                f"for {removed:.1f}u {tx.resource} from '{tanker.get('name', '?')}'"
+            )
+        else:
+            messages.append(
+                f"Fuel transaction: tanker pid={tx.tanker_pid} not found — "
+                "funds adjusted but fuel not reduced"
+            )
+
+    return messages
+
+
+def _reduce_vessel_fuel(vessel: Node, resource: str, amount: float) -> float:
+    """
+    Reduce `amount` units of `resource` across the vessel's PART > RESOURCE nodes.
+    Returns the amount actually removed.
+    """
+    remaining = amount
+    for part in vessel.get_children("PART"):
+        if remaining <= 0:
+            break
+        for res in part.get_children("RESOURCE"):
+            if res.get("name", "") != resource:
+                continue
+            try:
+                cur  = float(res.get("amount", "0"))
+                take = min(cur, remaining)
+                res.set("amount", repr(max(0.0, cur - take)))
+                remaining -= take
+            except ValueError:
+                pass
+    return amount - remaining
+
 
 def _build_universal(
     base_game: Node,

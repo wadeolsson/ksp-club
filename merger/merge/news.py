@@ -49,14 +49,17 @@ def generate(
     """
     player_map = {p["id"]: p for p in players}
 
-    new_fs = _flightstate(new_universal)
-    old_fs = _flightstate(old_universal)
+    new_fs   = _flightstate(new_universal)
+    old_fs   = _flightstate(old_universal)
+    new_game = new_universal.get_child("GAME")
+    old_game = old_universal.get_child("GAME") if old_universal else None
 
     new_vessels = _vessel_dict(new_fs)
     old_vessels = _vessel_dict(old_fs)
 
     events: list[dict] = []
 
+    # --- vessel events ---
     for pid, vessel in new_vessels.items():
         vtype = vessel.get("type", "")
         if vtype in SKIP_TYPES:
@@ -72,17 +75,15 @@ def generate(
         sit    = vessel.get("sit", "")
 
         if pid not in old_vessels:
-            # Brand-new vessel this week
             text = _new_vessel_line(agency, name, vtype, sit, vessel)
         else:
-            # Existing vessel — check for situation change
             old_sit = old_vessels[pid].get("sit", "")
             text = _sit_change_line(agency, name, vtype, old_sit, sit, vessel)
 
         if text:
             events.append({"player": player_id, "agency": agency, "text": text})
 
-    # Recovered/lost vessels (in old but gone from new)
+    # Recovered/lost vessels
     for pid, vessel in old_vessels.items():
         vtype = vessel.get("type", "")
         if vtype in SKIP_TYPES or pid in new_vessels:
@@ -99,7 +100,64 @@ def generate(
             "text":   f"{agency} recovers {name}.",
         })
 
+    # --- Kerbal events ---
+    events.extend(_kerbal_events(old_game, new_game, player_map))
+
     return {"week": date.today().isoformat(), "events": events}
+
+
+def _kerbal_events(
+    old_game: "Node | None",
+    new_game: "Node | None",
+    player_map: dict,
+) -> list[dict]:
+    """Detect Kerbal hires and deaths by diffing the ROSTER blocks."""
+    if new_game is None:
+        return []
+
+    new_roster = new_game.get_child("ROSTER")
+    old_roster = old_game.get_child("ROSTER") if old_game else None
+
+    # Build old name → state map
+    old_kerbals: dict[str, str] = {}
+    if old_roster:
+        for k in old_roster.get_children("KERBAL"):
+            name = k.get("name", "")
+            if name:
+                old_kerbals[name] = k.get("state", "")
+
+    events: list[dict] = []
+    if not new_roster:
+        return events
+
+    for k in new_roster.get_children("KERBAL"):
+        name      = k.get("name", "")
+        state     = k.get("state", "")
+        player_id = k.get("playerID", "")
+        player    = player_map.get(player_id)
+        if not player or not name:
+            continue
+
+        agency = player.get("agencyName", player_id)
+
+        if name not in old_kerbals:
+            # New hire this week
+            trait = k.get("trait", "")
+            role  = f" ({trait})" if trait else ""
+            events.append({
+                "player": player_id,
+                "agency": agency,
+                "text":   f"{agency} welcomes {name}{role} to their astronaut corps!",
+            })
+        elif state == "Dead" and old_kerbals.get(name, "") != "Dead":
+            # Kerbal died this week
+            events.append({
+                "player": player_id,
+                "agency": agency,
+                "text":   f"TRAGEDY: {name} of {agency} did not return.",
+            })
+
+    return events
 
 
 def write(news: dict, path: str) -> None:
