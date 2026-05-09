@@ -102,21 +102,10 @@ namespace KSPClub
             }
         }
 
-        // Gold color used for active tanker vessels — visible from any relation stance
-        public static readonly Color TankerColor = new Color(1.0f, 0.80f, 0.05f, 1f);
-
         static Color GetVesselColor(Vessel vessel)
         {
             var scenario = KSPClubScenario.Instance;
             var cfg      = PlayerConfig.Instance;
-
-            // Tanker vessels always show gold regardless of owner — instantly identifiable
-            bool isTanker = FuelTanker.TankerCache.TryGetValue(vessel.persistentId, out var tc)
-                            && tc.Active;
-            if (!isTanker && scenario != null && scenario.IsTanker(vessel.persistentId))
-                isTanker = true;
-            if (isTanker)
-                return TankerColor;
 
             // Active vessel in flight is always ours
             if (vessel.isActiveVessel && cfg != null)
