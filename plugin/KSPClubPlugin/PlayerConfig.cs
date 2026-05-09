@@ -188,6 +188,14 @@ namespace KSPClub
                         }
                     }
 
+                    // Cache tanker config for other players' tanker vessels
+                    if (pid != 0 && vesselNode.GetValue("isTanker") == "true")
+                    {
+                        var tc = TankerConfig.Load(vesselNode);
+                        tc.Active = true;
+                        FuelTanker.TankerCache[pid] = tc;
+                    }
+
                     if (vid == PlayerId || vid == "")
                     {
                         if (pid != 0)
@@ -263,8 +271,22 @@ namespace KSPClub
             data.to.RemoveValue("playerColor");
             data.to.AddValue("playerColor", OrbitColorsBase.ColorToString(PlayerColor));
 
+            // Stamp tanker config so other players see this vessel is a tanker
+            var tankerCfg = KSPClubScenario.Instance?.GetTankerConfig(data.from.persistentId);
+            if (tankerCfg != null && tankerCfg.Active)
+            {
+                data.to.RemoveValue("isTanker");
+                data.to.AddValue("isTanker", "true");
+                tankerCfg.Save(data.to);
+            }
+            else
+            {
+                data.to.RemoveValue("isTanker");
+            }
+
             Debug.Log($"[KSPClub] Stamped vessel '{data.from.vesselName}' " +
-                      $"playerID={PlayerId} color={ColorName}");
+                      $"playerID={PlayerId} color={ColorName}" +
+                      (tankerCfg?.Active == true ? " [TANKER]" : ""));
         }
 
         // Stamps Kerbals — roster is available in the full game node.

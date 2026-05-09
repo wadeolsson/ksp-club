@@ -3,9 +3,9 @@ using System.Collections.Generic;
 namespace KSPClub
 {
     /// <summary>
-    /// ScenarioModule tracking which vessel persistentIds and Kerbal names
-    /// belong to this player. Saved inside persistent.sfs as KSPClubScenario.
-    /// The merger keeps this block with the player's persistent layer.
+    /// ScenarioModule persisted inside persistent.sfs as KSPClubScenario.
+    /// Tracks vessel/Kerbal ownership, tanker configurations, and pending
+    /// fuel-purchase transactions for the merger to process.
     /// </summary>
     [KSPScenario(
         ScenarioCreationOptions.AddToAllGames | ScenarioCreationOptions.AddToExistingGames,
@@ -18,8 +18,13 @@ namespace KSPClub
     {
         public static KSPClubScenario? Instance { get; private set; }
 
-        private readonly HashSet<uint>   _ownedVesselIds    = new HashSet<uint>();
-        private readonly HashSet<string> _ownedKerbalNames  = new HashSet<string>();
+        private readonly HashSet<uint>   _ownedVesselIds   = new HashSet<uint>();
+        private readonly HashSet<string> _ownedKerbalNames = new HashSet<string>();
+
+        // Tanker configs for own vessels
+        private readonly Dictionary<uint, TankerConfig>    _tankers      = new Dictionary<uint, TankerConfig>();
+        // Fuel-purchase transactions waiting for the merger to process
+        private readonly List<TransactionRecord>            _transactions = new List<TransactionRecord>();
 
         // ------------------------------------------------------------------ lifecycle
 
@@ -38,30 +43,72 @@ namespace KSPClub
 
         public override void OnSave(ConfigNode node)
         {
-            ConfigNode vessels = node.AddNode("OWNED_VESSELS");
+            // Owned vessels
+            ConfigNode ov = node.AddNode("OWNED_VESSELS");
             foreach (uint id in _ownedVesselIds)
-                vessels.AddValue("id", id.ToString());
+                ov.AddValue("id", id.ToString());
 
-            ConfigNode kerbals = node.AddNode("OWNED_KERBALS");
+            // Owned Kerbals
+            ConfigNode ok = node.AddNode("OWNED_KERBALS");
             foreach (string name in _ownedKerbalNames)
-                kerbals.AddValue("name", name);
+                ok.AddValue("name", name);
+
+            // Tanker configs
+            if (_tankers.Count > 0)
+            {
+                ConfigNode tc = node.AddNode("TANKER_CONFIGS");
+                foreach (var kv in _tankers)
+                {
+                    ConfigNode t = tc.AddNode("TANKER");
+                    t.AddValue("persistentId", kv.Key.ToString());
+                    kv.Value.Save(t);
+                }
+            }
+
+            // Pending transactions
+            if (_transactions.Count > 0)
+            {
+                ConfigNode txs = node.AddNode("TRANSACTIONS");
+                foreach (var tx in _transactions)
+                {
+                    ConfigNode t = txs.AddNode("TX");
+                    tx.Save(t);
+                }
+            }
         }
 
         public override void OnLoad(ConfigNode node)
         {
+            // Owned vessels
             _ownedVesselIds.Clear();
-            ConfigNode? vessels = node.GetNode("OWNED_VESSELS");
-            if (vessels != null)
-                foreach (string idStr in vessels.GetValues("id"))
-                    if (uint.TryParse(idStr, out uint id))
+            ConfigNode? ov = node.GetNode("OWNED_VESSELS");
+            if (ov != null)
+                foreach (string s in ov.GetValues("id"))
+                    if (uint.TryParse(s, out uint id))
                         _ownedVesselIds.Add(id);
 
+            // Owned Kerbals
             _ownedKerbalNames.Clear();
-            ConfigNode? kerbals = node.GetNode("OWNED_KERBALS");
-            if (kerbals != null)
-                foreach (string name in kerbals.GetValues("name"))
+            ConfigNode? ok = node.GetNode("OWNED_KERBALS");
+            if (ok != null)
+                foreach (string name in ok.GetValues("name"))
                     if (!string.IsNullOrEmpty(name))
                         _ownedKerbalNames.Add(name);
+
+            // Tanker configs
+            _tankers.Clear();
+            ConfigNode? tc = node.GetNode("TANKER_CONFIGS");
+            if (tc != null)
+                foreach (ConfigNode t in tc.GetNodes("TANKER"))
+                    if (uint.TryParse(t.GetValue("persistentId"), out uint pid))
+                        _tankers[pid] = TankerConfig.Load(t);
+
+            // Pending transactions
+            _transactions.Clear();
+            ConfigNode? txs = node.GetNode("TRANSACTIONS");
+            if (txs != null)
+                foreach (ConfigNode t in txs.GetNodes("TX"))
+                    _transactions.Add(TransactionRecord.Load(t));
         }
 
         // ------------------------------------------------------------------ vessel ownership
@@ -79,8 +126,7 @@ namespace KSPClub
         }
 
         public bool OwnsVessel(uint persistentId) => _ownedVesselIds.Contains(persistentId);
-
-        public int OwnedVesselCount => _ownedVesselIds.Count;
+        public int  OwnedVesselCount              => _ownedVesselIds.Count;
 
         // ------------------------------------------------------------------ Kerbal ownership
 
@@ -91,7 +137,30 @@ namespace KSPClub
         }
 
         public bool OwnsKerbal(string name) => _ownedKerbalNames.Contains(name);
+        public int  OwnedKerbalCount        => _ownedKerbalNames.Count;
 
-        public int OwnedKerbalCount => _ownedKerbalNames.Count;
+        // ------------------------------------------------------------------ tanker management
+
+        public void SetTankerConfig(uint persistentId, TankerConfig config)
+        {
+            _tankers[persistentId] = config;
+            UnityEngine.Debug.Log($"[KSPClub] Tanker config saved for pid={persistentId} active={config.Active}");
+        }
+
+        public TankerConfig? GetTankerConfig(uint persistentId)
+            => _tankers.TryGetValue(persistentId, out var c) ? c : null;
+
+        public bool IsTanker(uint persistentId)
+            => _tankers.TryGetValue(persistentId, out var c) && c.Active;
+
+        // ------------------------------------------------------------------ transactions
+
+        public void RecordTransaction(TransactionRecord tx)
+        {
+            _transactions.Add(tx);
+            UnityEngine.Debug.Log($"[KSPClub] Transaction recorded: {tx.Buyer} paid ◆{tx.TotalCost:F0} to {tx.Seller} for {tx.Amount:F1}u {tx.Resource}");
+        }
+
+        public int PendingTransactionCount => _transactions.Count;
     }
 }
