@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using KSP.UI.Screens;
 using UnityEngine;
 
 namespace KSPClub
@@ -28,12 +29,37 @@ namespace KSPClub
         }
     }
 
-    // ---- Tracking Station: apply on enter and when selection changes ----
+    // ---- Tracking Station: apply on enter, on selection change, and periodically ----
 
     [KSPAddon(KSPAddon.Startup.TrackingStation, false)]
     public class OrbitColorsTracking : OrbitColorsBase
     {
-        void Start() => ApplyColors();
+        private float _nextApply;
+        private uint  _lastSelectedId;
+
+        void Start()
+        {
+            ApplyColors();
+            _nextApply = Time.time + 2f;
+        }
+
+        void Update()
+        {
+            // Reapply periodically — KSP resets colors on vessel list interaction
+            if (Time.time >= _nextApply)
+            {
+                ApplyColors();
+                _nextApply = Time.time + 3f;
+            }
+
+            // Also reapply immediately when the selected vessel changes
+            uint cur = SpaceTracking.Instance?.SelectedVessel?.persistentId ?? 0;
+            if (cur != _lastSelectedId)
+            {
+                _lastSelectedId = cur;
+                ApplyColors();
+            }
+        }
     }
 
     // ---- Shared implementation ----
@@ -76,10 +102,21 @@ namespace KSPClub
             }
         }
 
+        // Gold color used for active tanker vessels — visible from any relation stance
+        public static readonly Color TankerColor = new Color(1.0f, 0.80f, 0.05f, 1f);
+
         static Color GetVesselColor(Vessel vessel)
         {
             var scenario = KSPClubScenario.Instance;
             var cfg      = PlayerConfig.Instance;
+
+            // Tanker vessels always show gold regardless of owner — instantly identifiable
+            bool isTanker = FuelTanker.TankerCache.TryGetValue(vessel.persistentId, out var tc)
+                            && tc.Active;
+            if (!isTanker && scenario != null && scenario.IsTanker(vessel.persistentId))
+                isTanker = true;
+            if (isTanker)
+                return TankerColor;
 
             // Active vessel in flight is always ours
             if (vessel.isActiveVessel && cfg != null)
@@ -102,9 +139,9 @@ namespace KSPClub
             // Apply relation-based modulation
             return relation switch
             {
-                Relation.Friendly => baseColor,                             // full brightness
-                Relation.Neutral  => Color.Lerp(baseColor, Color.gray, 0.35f), // slightly dimmed
-                Relation.Hostile  => new Color(0.55f, 0.05f, 0.05f, 0.4f), // dim red
+                Relation.Friendly => baseColor,
+                Relation.Neutral  => Color.Lerp(baseColor, Color.gray, 0.35f),
+                Relation.Hostile  => new Color(0.55f, 0.05f, 0.05f, 0.4f),
                 _                 => baseColor,
             };
         }
