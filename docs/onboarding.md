@@ -1,134 +1,156 @@
 # KSP CLUB — Player Onboarding Guide
 
-Welcome to the club. This guide walks you through everything you need to set up and play your first week.
+Welcome to the club. This guide gets you from zero to your first week of play.
 
 ---
 
 ## What You Need
 
 - **Kerbal Space Program 1.12.5** (Steam)
-- **The KSP CLUB plugin** — download from the [Releases page](https://github.com/wadeolsson/ksp-club/releases)
-- **GitHub Desktop** — [desktop.github.com](https://desktop.github.com) (free)
+- **KSPClubPlugin** — download from [github.com/wadeolsson/ksp-club/releases/latest](https://github.com/wadeolsson/ksp-club/releases/latest)
 - **A GitHub account** — [github.com](https://github.com) (free)
-- Access to the `ksp-club-saves` repo — ask your game master to invite you
+- An invite to the `ksp-club-saves` repo — ask your game master
 
 ---
 
 ## One-Time Setup
 
-### 1. Install the Plugin
+### 1. Create a GitHub token
 
-1. Download `KSPClubPlugin.dll` from the latest release
-2. Copy it into your KSP install:
+1. Go to **github.com → Settings → Developer Settings → Personal access tokens → Tokens (classic)**
+2. Click **Generate new token (classic)**
+3. Name it `KSP CLUB`, tick the **`repo`** scope
+4. Click Generate — **copy the token immediately** (only shown once)
 
-   **Mac (Steam):**
-   ```
-   ~/Library/Application Support/Steam/steamapps/common/Kerbal Space Program/GameData/KSPClubPlugin/KSPClubPlugin.dll
-   ```
+### 2. Install the plugin
 
-   **Windows (Steam):**
-   ```
-   C:\Program Files (x86)\Steam\steamapps\common\Kerbal Space Program\GameData\KSPClubPlugin\KSPClubPlugin.dll
-   ```
+Download `KSPClubPlugin.dll` (and the three `.png` icon files) from the [latest release](https://github.com/wadeolsson/ksp-club/releases/latest).
 
-   The `KSPClubPlugin/` folder doesn't exist yet — create it.
+Create `GameData/KSPClubPlugin/` in your KSP folder and put all four files inside:
 
-3. Launch KSP. If the plugin loaded correctly you'll see a setup prompt the first time you open a save.
+```
+GameData/
+  KSPClubPlugin/
+    KSPClubPlugin.dll
+    icon_sync.png
+    icon_transfer.png
+    icon_fuel.png
+    icon_tanker.png
+```
 
-### 2. Set Your Player ID
+**Mac (Steam):** `~/Library/Application Support/Steam/steamapps/common/Kerbal Space Program/GameData/KSPClubPlugin/`
 
-When you first open any save, a dialog appears:
+**Windows (Steam):** `C:\Program Files (x86)\Steam\steamapps\common\Kerbal Space Program\GameData\KSPClubPlugin\`
 
-> **KSP CLUB — Player Setup**
-> Enter your player ID...
+### 3. Create your club save
 
-Type the ID your game master gave you (e.g. `wade`). Hit **Save**.
+In KSP, create a new **Career** save called exactly `KSP_CLUB`.
 
-Your ID is stored in `GameData/KSPClubPlugin/PluginData/player.cfg` and survives KSP restarts. You only need to do this once.
+### 4. First-run setup
 
-> If you need to change your ID later, the dialog can be re-opened — ask your game master how.
+Load the `KSP_CLUB` save. When the Space Center loads, the setup dialog appears automatically:
 
-### 3. Set Up GitHub Desktop
+```
+KSP CLUB — Setup
+──────────────────────────────────────────
+Player ID:      [ your id, e.g. wade      ]
+Agency Name:    [ your agency name         ]
+Orbit Color:    [ blue / red / green / ... ]
+GitHub Token:   [ ghp_...                  ]
+Repo Owner:     [ wadeolsson               ]
+Repo Name:      [ ksp-club-saves           ]
+Club Save Name: [ KSP_CLUB                 ]
+──────────────────────────────────────────
+```
 
-1. Download and install [GitHub Desktop](https://desktop.github.com)
-2. Sign in with your GitHub account
-3. Ask your game master to add you as a collaborator on `ksp-club-saves`
-4. In GitHub Desktop: **File → Clone Repository** → find `ksp-club-saves` → clone it somewhere easy to find (e.g. your Desktop)
+Available colors: `blue`, `red`, `green`, `orange`, `purple`, `yellow`, `cyan`, `pink`
 
-### 4. Get Your Starting Save
+Hit **Save**.
 
-Your game master will place your first save at `output/<your-id>/persistent.sfs` in the saves repo.
+### 5. Your first Kerbals
 
-1. In GitHub Desktop, pull the latest changes (click **Fetch origin**)
-2. In the cloned repo folder, navigate to `output/<your-id>/persistent.sfs`
-3. Copy it to your KSP saves folder as a new save called `KSP_CLUB`:
+The plugin automatically generates 4 random Kerbals for you the first time you enter the Space Center. Check the Astronaut Complex — they're your crew.
 
-   **Mac:**
-   ```
-   ~/Library/Application Support/Steam/steamapps/common/Kerbal Space Program/saves/KSP_CLUB/persistent.sfs
-   ```
+> **Important:** Do not use Jeb, Val, Bill, or Bob. They belong to the shared universe, not to any agency. The game will remind you when you open the Astronaut Complex.
 
-   **Windows:**
-   ```
-   C:\...\Kerbal Space Program\saves\KSP_CLUB\persistent.sfs
-   ```
+### 6. Submit your first save
 
-   Create the `KSP_CLUB/` folder if it doesn't exist.
-
-5. Launch KSP and load the **KSP_CLUB** save. That's your club save — only play the club in this save.
+Click the **blue toolbar button** (top right) → **Submit My Save**. This pushes your save to the club. Your game master will run the first merge and you'll see other players' vessels in your universe next session.
 
 ---
 
 ## Every Week
 
-### Start of Week — Get Your New Save
+### Start of week — get your new save
 
-Your game master runs the merge each week and puts your rebuilt save in `output/<your-id>/persistent.sfs`.
+When KSP launches, check the main menu. If a new merged save is available, a prompt appears automatically:
 
-1. Open GitHub Desktop → **Fetch origin** → **Pull**
-2. Copy `output/<your-id>/persistent.sfs` → `saves/KSP_CLUB/persistent.sfs`
-3. Load the **KSP_CLUB** save in KSP and play
+> "The game master has merged this week's saves. Download now?"
 
-> Your progress from last week is in there. So is everyone else's latest universe.
+Click **Download**. Load the `KSP_CLUB` save — your progress is intact and everyone else's latest universe is in there.
 
-### During the Week — Play Normally
+### During the week — play
 
-Launch rockets, do science, build stations — whatever you like. The plugin quietly tags every vessel you create with your player ID in the background.
+Launch rockets, do science, hire Kerbals, expand your fleet. The plugin tags everything automatically.
 
-**Two rules:**
-1. **Only play the `KSP_CLUB` save** for club missions. Your other saves are unaffected and separate.
-2. **Don't use the stock Kerbals** (Jebediah, Valentina, Bill, Bob). The game will remind you when you open the Astronaut Complex. Hire random recruits instead — they're yours to name and keep.
+**Three rules:**
+1. **Only play the `KSP_CLUB` save** for club missions
+2. **Don't use Jeb, Val, Bill, or Bob** — hire random recruits only
+3. **Don't terminate or recover other players' vessels** — the plugin blocks this, but be aware
 
-### End of Week — Submit Your Save
+### End of week — submit
 
-When your game master calls for submissions:
+Click the **blue toolbar button** → **Submit My Save**. Done.
 
-1. In KSP: **Save** and quit to the main menu
-2. Find your save file:
-   - **Mac:** `~/Library/Application Support/Steam/steamapps/common/Kerbal Space Program/saves/KSP_CLUB/persistent.sfs`
-   - **Windows:** `C:\...\Kerbal Space Program\saves\KSP_CLUB\persistent.sfs`
-3. Copy it into the saves repo at `submissions/<your-id>/persistent.sfs`
-4. Open GitHub Desktop — you should see the file as a changed/new file
-5. Write a commit message (e.g. `submission: wade week of 2025-07-14`)
-6. Click **Commit to main** then **Push origin**
+---
 
-That's it. Your game master will handle the merge.
+## Toolbar Buttons
+
+| Icon | Scene | What it does |
+|------|-------|-------------|
+| 🔵 Blue rocket | Space Center | Submit save, check news, manage relations, settings |
+| 🟢 Green ships | Tracking Station | Transfer a vessel to another player |
+| 🟠 Orange tank | Flight | Set vessel as fuel tanker, refuel from nearby tanker |
+
+---
+
+## Fuel Tanker System
+
+Any vessel can be set as a fuel tanker. In flight, click the **orange tank toolbar button**:
+
+- **Set This Vessel as Tanker** → configure prices per resource and reserve %
+- **Nearby Tankers** → if another player's tanker is within 50m (orbit) or 500m (landed), refuel from it
+
+Pricing: tanker owner sets ◆ funds per unit. Friendly agencies can get a discount. Hostile agencies can't access your tanker at all.
+
+Fuel transactions are processed on the next weekly merge — funds move between accounts and the tanker's fuel decreases in the universal state.
+
+---
+
+## Diplomatic Relations
+
+Click the **blue toolbar button** → **Relations** to set your stance toward each agency:
+
+- **Friendly** — full CommNet relay access, tanker discounts, bright orbit colors
+- **Neutral** (default) — standard access, dimmed orbit colors
+- **Hostile** — blocked from your relays and tanker, dim red orbit color
+
+---
+
+## Weekly News
+
+After the game master runs the merge, a **Weekly Report** pops up when you enter the Space Center. It shows what everyone did this week — launches, landings, Kerbal hires, vessel recoveries. Also accessible anytime via the blue toolbar → **News**.
 
 ---
 
 ## Troubleshooting
 
-**"My player ID dialog never appeared"**
-Check that `KSPClubPlugin.dll` is in `GameData/KSPClubPlugin/`. If the folder has the file but still no dialog, check the KSP log (`KSP.log` in the game root) for `[KSPClub]` lines.
+**Setup dialog doesn't appear** — click the blue toolbar button → Settings.
 
-**"I accidentally used Jeb"**
-Let your game master know before the merge. They can manually adjust the roster. Going forward, the plugin warns you — listen to it.
+**Accidentally used a stock Kerbal** — tell your game master before the merge. They can fix it.
 
-**"I played in the wrong save"**
-You'll need to start fresh from the distributed save. Your progress from the wrong save is lost (it won't be merged). Tell your game master before submission day.
+**Played in the wrong save** — you'll need to redownload last week's output and start that session over. Tell your game master.
 
-**"GitHub Desktop says there's a conflict"**
-Don't try to resolve it yourself — message your game master. This usually means two people edited the same file.
+**Plugin not loading** — check KSP.log for `[KSPClub]` lines. Make sure all four files are in `GameData/KSPClubPlugin/`.
 
-**"The save won't load / KSP crashes"**
-Check that your mod list exactly matches the club's required mod list. A mismatch between installed mods and the save's part list will cause load failures.
+**Submit button says "Could not find save file"** — try Escape → Save Game manually first, then submit.
