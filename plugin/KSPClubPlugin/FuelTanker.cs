@@ -1,7 +1,6 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Reflection;
 using KSP.UI.Screens;
 using UnityEngine;
 
@@ -39,16 +38,6 @@ namespace KSPClub
         private Coroutine?  _pumpRoutine;
 
         private static Texture2D? _tankerIcon;
-        private static Sprite?    _tankerSprite;
-
-        // Original vessel types before we changed them — restored on deactivate
-        private readonly Dictionary<uint, VesselType> _originalTypes
-            = new Dictionary<uint, VesselType>();
-
-        // Reflection field for iconSprites on OrbitRendererBase
-        private static readonly FieldInfo? IconSpritesField =
-            typeof(OrbitRendererBase).GetField("iconSprites",
-                BindingFlags.NonPublic | BindingFlags.Instance);
 
         // Cache of other players' tanker configs populated by PlayerConfig on save load
         public static readonly Dictionary<uint, TankerConfig> TankerCache
@@ -59,32 +48,59 @@ namespace KSPClub
         void Start()
         {
             GameEvents.onGUIApplicationLauncherReady.Add(AddButton);
-            _tankerIcon = GameDatabase.Instance?.GetTexture("KSPClubPlugin/icon_tanker", false);
 
-            // Build a Sprite from the tanker texture for injection into OrbitRenderer
-            if (_tankerIcon != null && _tankerSprite == null)
-                _tankerSprite = Sprite.Create(_tankerIcon,
-                    new Rect(0, 0, _tankerIcon.width, _tankerIcon.height),
-                    new Vector2(0.5f, 0.5f), 100f);
+            // Load the tanker icon and make its dark background transparent at runtime
+            var raw = GameDatabase.Instance?.GetTexture("KSPClubPlugin/icon_tanker", false);
+            if (raw != null)
+            {
+                // Duplicate so we don't modify the shared GameDatabase texture
+                _tankerIcon = new Texture2D(raw.width, raw.height, TextureFormat.RGBA32, false);
+                _tankerIcon.SetPixels(raw.GetPixels());
 
-            GameEvents.onVesselChange.Add(OnVesselChanged);
+                // Make near-black pixels transparent (the icon has a dark background)
+                var pixels = _tankerIcon.GetPixels32();
+                for (int i = 0; i < pixels.Length; i++)
+                {
+                    var p = pixels[i];
+                    if (p.r < 40 && p.g < 40 && p.b < 40)
+                        pixels[i].a = 0;
+                }
+                _tankerIcon.SetPixels32(pixels);
+                _tankerIcon.Apply();
+            }
         }
-
-        void OnVesselChanged(Vessel _) => ApplyTankerTypes();
 
         void OnDestroy()
         {
             GameEvents.onGUIApplicationLauncherReady.Remove(AddButton);
-            GameEvents.onVesselChange.Remove(OnVesselChanged);
             if (_button != null)
                 ApplicationLauncher.Instance.RemoveModApplication(_button);
             StopPump();
-            RestoreAllTypes();
+
+            // Restore all drawIcons to ALL on scene exit
+            foreach (var vessel in FlightGlobals.Vessels)
+                if (vessel?.orbitDriver?.Renderer != null)
+                    vessel.orbitDriver.Renderer.drawIcons = OrbitRendererBase.DrawIcons.ALL;
         }
 
         void Update()
         {
-            if (MapView.MapIsEnabled) ApplyTankerTypes();
+            if (!MapView.MapIsEnabled) return;
+
+            var scenario = KSPClubScenario.Instance;
+            foreach (var vessel in FlightGlobals.Vessels)
+            {
+                if (vessel?.orbitDriver?.Renderer == null) continue;
+
+                bool isTanker = (scenario != null && scenario.IsTanker(vessel.persistentId))
+                                || (TankerCache.TryGetValue(vessel.persistentId, out var tc) && tc.Active);
+
+                // OBJ_PE_AP (2) = show Pe/Ap markers only, hide vessel emblem
+                // ALL       (3) = show everything
+                vessel.orbitDriver.Renderer.drawIcons = isTanker
+                    ? OrbitRendererBase.DrawIcons.OBJ_PE_AP
+                    : OrbitRendererBase.DrawIcons.ALL;
+            }
         }
 
         // ------------------------------------------------------------------ toolbar
@@ -565,68 +581,45 @@ namespace KSPClub
 
         // ------------------------------------------------------------------ icon
 
-        // ------------------------------------------------------------------ tanker vessel type injection
+        // ------------------------------------------------------------------ map icon overlay
 
-        /// <summary>
-        /// For each tanker vessel: change its vesselType to Unknown and inject
-        /// the tank sprite into that renderer's iconSprites array so KSP renders
-        /// the tank icon natively as the map/tracking emblem.
-        /// For non-tanker vessels that were changed: restore original type.
-        /// </summary>
-        void ApplyTankerTypes()
+        void OnGUI()
         {
-            if (_tankerSprite == null || IconSpritesField == null) return;
+            // Only run during the visual draw pass — never during input events
+            if (Event.current.type != EventType.Repaint) return;
+            if (_tankerIcon == null) return;
+            if (!MapView.MapIsEnabled) return;
 
-            var scenario = KSPClubScenario.Instance;
+            var scenario  = KSPClubScenario.Instance;
+            var playerCfg = PlayerConfig.Instance;
 
             foreach (var vessel in FlightGlobals.Vessels)
             {
-                if (vessel?.orbitDriver?.Renderer == null) continue;
-
                 bool isTanker = (scenario != null && scenario.IsTanker(vessel.persistentId))
                                 || (TankerCache.TryGetValue(vessel.persistentId, out var tc) && tc.Active);
+                if (!isTanker) continue;
 
-                if (isTanker)
-                {
-                    // Store original type the first time we see this tanker
-                    if (!_originalTypes.ContainsKey(vessel.persistentId))
-                        _originalTypes[vessel.persistentId] = vessel.vesselType;
+                Vector3d scaledPos = ScaledSpace.LocalToScaledSpace(vessel.GetWorldPos3D());
+                Vector3  screen    = PlanetariumCamera.Camera.WorldToScreenPoint(
+                    new Vector3((float)scaledPos.x, (float)scaledPos.y, (float)scaledPos.z));
 
-                    // Inject tank sprite into the Unknown slot on this renderer
-                    if (vessel.orbitDriver.Renderer is OrbitRenderer or2)
-                        InjectSprite(or2);
+                if (screen.z <= 0) continue;
 
-                    // Change vessel type to Unknown — KSP will now show the tank icon
-                    if (vessel.vesselType != VesselType.Unknown)
-                        vessel.vesselType = VesselType.Unknown;
-                }
-                else if (_originalTypes.TryGetValue(vessel.persistentId, out VesselType original))
-                {
-                    // Tanker was deactivated — restore original type
-                    vessel.vesselType = original;
-                    _originalTypes.Remove(vessel.persistentId);
-                }
+                float sx = screen.x;
+                float sy = Screen.height - screen.y;
+
+                // Tint the icon with the player's orbit color
+                Color tint = Color.white;
+                if (scenario != null && scenario.OwnsVessel(vessel.persistentId) && playerCfg != null)
+                    tint = playerCfg.PlayerColor;
+                else if (OrbitColorsBase.VesselColorCache.TryGetValue(vessel.persistentId, out Color cached))
+                    tint = cached;
+
+                GUI.color = tint;
+                const float SIZE = 48f;
+                GUI.DrawTexture(new Rect(sx - SIZE / 2, sy - SIZE / 2, SIZE, SIZE), _tankerIcon);
+                GUI.color = Color.white; // reset
             }
-        }
-
-        void RestoreAllTypes()
-        {
-            foreach (var vessel in FlightGlobals.Vessels)
-            {
-                if (vessel == null) continue;
-                if (_originalTypes.TryGetValue(vessel.persistentId, out VesselType original))
-                    vessel.vesselType = original;
-            }
-            _originalTypes.Clear();
-        }
-
-        static void InjectSprite(OrbitRenderer renderer)
-        {
-            if (IconSpritesField?.GetValue(renderer) is not Sprite[] sprites) return;
-
-            int idx = (int)VesselType.Unknown;
-            if (idx >= 0 && idx < sprites.Length && _tankerSprite != null)
-                sprites[idx] = _tankerSprite;
         }
 
         // ------------------------------------------------------------------ icon
