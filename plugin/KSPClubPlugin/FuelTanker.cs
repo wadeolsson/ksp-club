@@ -541,6 +541,9 @@ namespace KSPClub
 
         void OnGUI()
         {
+            // Only run during the draw pass — never during mouse/keyboard events.
+            // Fixes: orbit click detection, maneuver nodes, Pe/Ap interactivity.
+            if (Event.current.type != EventType.Repaint) return;
             if (_tankerIcon == null) return;
             if (!MapView.MapIsEnabled) return;
 
@@ -548,24 +551,38 @@ namespace KSPClub
 
             foreach (var vessel in FlightGlobals.Vessels)
             {
-                // Check own tankers via scenario, other players' via cache
                 bool isTanker = (scenario != null && scenario.IsTanker(vessel.persistentId))
                                 || (TankerCache.TryGetValue(vessel.persistentId, out var tc) && tc.Active);
                 if (!isTanker) continue;
 
-                // Project vessel position to screen space (map view uses ScaledSpace)
+                // Hide the vessel type emblem — keep Pe/Ap orbit markers (OBJ_PE_AP = 2)
+                if (vessel.orbitDriver?.Renderer != null)
+                    vessel.orbitDriver.Renderer.drawIcons = OrbitRendererBase.DrawIcons.OBJ_PE_AP;
+
+                // Project vessel position to screen space
                 Vector3d scaledPos = ScaledSpace.LocalToScaledSpace(vessel.GetWorldPos3D());
                 Vector3 screen = PlanetariumCamera.Camera.WorldToScreenPoint(
                     new Vector3((float)scaledPos.x, (float)scaledPos.y, (float)scaledPos.z));
 
-                if (screen.z <= 0) continue; // behind camera
+                if (screen.z <= 0) continue;
 
-                // KSP GUI uses top-left origin; flip Y
                 float sx = screen.x;
                 float sy = Screen.height - screen.y;
 
-                const float SIZE = 24f;
+                const float SIZE = 48f;
                 GUI.DrawTexture(new Rect(sx - SIZE / 2, sy - SIZE / 2, SIZE, SIZE), _tankerIcon);
+            }
+        }
+
+        void OnDisable()
+        {
+            // Restore drawIcons for all tanker vessels when leaving map view
+            foreach (var vessel in FlightGlobals.Vessels)
+            {
+                bool isTanker = (KSPClubScenario.Instance?.IsTanker(vessel.persistentId) == true)
+                                || (TankerCache.TryGetValue(vessel.persistentId, out var tc) && tc.Active);
+                if (isTanker && vessel.orbitDriver?.Renderer != null)
+                    vessel.orbitDriver.Renderer.drawIcons = OrbitRendererBase.DrawIcons.ALL;
             }
         }
 
