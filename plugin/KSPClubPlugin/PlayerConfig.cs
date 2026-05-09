@@ -357,7 +357,7 @@ namespace KSPClub
                     HighLogic.UISkin, 360f,
                     new DialogGUIButton("Download", () =>
                         StartCoroutine(DownloadNewSave(client, remoteSha))),
-                    new DialogGUIButton("Later", null, false)
+                    new DialogGUIButton("Later", null, true)
                 ),
                 false, HighLogic.UISkin);
         }
@@ -522,7 +522,7 @@ namespace KSPClub
                     new DialogGUIButton("Save", () =>
                         SetConfig(inputId, inputAgency, inputColor, inputToken,
                                   inputOwner, inputRepo, inputSave)),
-                    new DialogGUIButton("Cancel", null, false)
+                    new DialogGUIButton("Cancel", null, true)
                 ),
                 false, HighLogic.UISkin);
         }

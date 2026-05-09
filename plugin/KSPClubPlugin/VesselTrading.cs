@@ -125,7 +125,7 @@ namespace KSPClub
                 ConfirmTransfer(selectedId, selectedName, tid);
             }, false));
 
-            elements.Add(new DialogGUIButton("Cancel", null, false));
+            elements.Add(new DialogGUIButton("Cancel", null, true));
 
             PopupDialog.SpawnPopupDialog(
                 new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),

@@ -85,7 +85,7 @@ namespace KSPClub
                     new DialogGUIButton("News",          ShowNewsDialog, true),
                     new DialogGUIButton("Relations",     ShowRelationsDialog, true),
                     new DialogGUIButton("Settings",      () => PlayerConfig.Instance?.ShowSetupDialog(), true),
-                    new DialogGUIButton("Close",         null, false)
+                    new DialogGUIButton("Close",         null, true)
                 ),
                 false,
                 HighLogic.UISkin
@@ -132,7 +132,7 @@ namespace KSPClub
                     "KSP CLUB — Weekly Report",
                     HighLogic.UISkin,
                     440f,
-                    new DialogGUIButton("Close", null, false)
+                    new DialogGUIButton("Close", null, true)
                 ),
                 false, HighLogic.UISkin);
         }
@@ -180,7 +180,7 @@ namespace KSPClub
                 ));
             }
 
-            elements.Add(new DialogGUIButton("Close", null, false));
+            elements.Add(new DialogGUIButton("Close", null, true));
 
             PopupDialog.SpawnPopupDialog(
                 new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),

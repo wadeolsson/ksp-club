@@ -118,10 +118,10 @@ namespace KSPClub
                 }
             }
 
-            // --- nearby tankers section ---
+            // --- nearby tankers section (always shown) ---
+            elements.Add(new DialogGUILabel("\n<b>Nearby Tankers:</b>"));
             if (nearbyTankers.Count > 0)
             {
-                elements.Add(new DialogGUILabel("\n<b>Nearby Tankers:</b>"));
                 foreach (var nt in nearbyTankers)
                 {
                     var    tv    = nt.Vessel;
@@ -132,12 +132,12 @@ namespace KSPClub
                         () => ShowRefuelDialog(tv, tc), true));
                 }
             }
-            else if (!isMine)
+            else
             {
-                elements.Add(new DialogGUILabel("\nNo tankers within range."));
+                elements.Add(new DialogGUILabel("No tankers within range.\n(50m orbital / 500m landed)"));
             }
 
-            elements.Add(new DialogGUIButton("Close", null, false));
+            elements.Add(new DialogGUIButton("Close", null, true));
 
             PopupDialog.SpawnPopupDialog(
                 new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
@@ -208,7 +208,7 @@ namespace KSPClub
                             $"[KSP CLUB] {vessel.vesselName} tanker settings saved.",
                             3f, ScreenMessageStyle.UPPER_CENTER);
                     }),
-                    new DialogGUIButton("Close", null, false)
+                    new DialogGUIButton("Close", null, true)
                 ),
                 false, HighLogic.UISkin);
         }
@@ -274,7 +274,7 @@ namespace KSPClub
                 }, false),
                 new DialogGUIButton("Stop", () => StopPump(), false)
             ));
-            elements.Add(new DialogGUIButton("Close", null, false));
+            elements.Add(new DialogGUIButton("Close", null, true));
 
             PopupDialog.SpawnPopupDialog(
                 new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
@@ -446,15 +446,30 @@ namespace KSPClub
         {
             var result    = new List<NearbyTanker>();
             var playerCfg = PlayerConfig.Instance;
+            var scenario  = KSPClubScenario.Instance;
             if (playerCfg == null) return result;
 
             foreach (var v in FlightGlobals.VesselsLoaded)
             {
                 if (v == me) continue;
-                if (!TankerCache.TryGetValue(v.persistentId, out var tc)) continue;
-                if (!tc.Active) continue;
-                if (playerCfg.GetRelation(tc.OwnerPlayerId) == Relation.Hostile) continue;
                 if (!InRange(me, v)) continue;
+
+                TankerConfig? tc = null;
+
+                // Own tanker vessels: config lives in ClubScenario
+                if (scenario != null && scenario.OwnsVessel(v.persistentId))
+                {
+                    tc = scenario.GetTankerConfig(v.persistentId);
+                }
+                // Other players' tanker vessels: config cached from save data
+                else if (TankerCache.TryGetValue(v.persistentId, out var cached))
+                {
+                    if (playerCfg.GetRelation(cached.OwnerPlayerId) == Relation.Hostile)
+                        continue;
+                    tc = cached;
+                }
+
+                if (tc == null || !tc.Active) continue;
                 result.Add(new NearbyTanker { Vessel = v, Config = tc });
             }
             return result;
