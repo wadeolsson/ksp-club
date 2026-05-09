@@ -319,6 +319,16 @@ def cmd_merge(args: argparse.Namespace) -> int:
     else:
         print("\nWriting output...")
 
+        # Load OLD universal before overwriting (needed for news diff)
+        old_universal = None
+        old_universal_path = config.universal_dir / "persistent.sfs"
+        if old_universal_path.exists():
+            try:
+                with open(old_universal_path, encoding="utf-8") as f:
+                    old_universal = parse(f.read())
+            except Exception:
+                pass  # first merge — no old universal
+
         # Universal state
         config.universal_dir.mkdir(parents=True, exist_ok=True)
         _write_save(config.universal_dir / "persistent.sfs", universal)
@@ -330,6 +340,13 @@ def cmd_merge(args: argparse.Namespace) -> int:
             out_path.parent.mkdir(parents=True, exist_ok=True)
             _write_save(out_path, save_root)
             print(f"  → output/{pid}/persistent.sfs")
+
+        # News feed
+        from merger.merge.news import generate as gen_news, write as write_news
+        news = gen_news(old_universal, universal, players)
+        news_path = str(config.saves_repo / "news" / "latest.json")
+        write_news(news, news_path)
+        print(f"  → news/latest.json  ({len(news['events'])} event(s))")
 
         # 6. Git push
         if not args.no_git:

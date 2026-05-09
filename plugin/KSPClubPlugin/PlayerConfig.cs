@@ -31,8 +31,17 @@ namespace KSPClub
         public string RepoName    { get; private set; } = "ksp-club-saves";
         public string SaveName    { get; private set; } = "KSP_CLUB";
 
-        private string _lastOutputSha   = "";
+        private string _lastOutputSha    = "";
+        private string _lastNewsWeek     = "";
         private bool   _checkedThisSession;
+
+        private static string NewsPath =>
+            Path.Combine(KSPUtil.ApplicationRootPath,
+                "GameData/KSPClubPlugin/PluginData/news.json");
+
+        // Latest news loaded from disk: list of "text" strings for current week
+        public static System.Collections.Generic.List<string> LatestNews
+            = new System.Collections.Generic.List<string>();
 
         // Pending game node cached from onGameStateLoad, processed after scene settles
         private ConfigNode? _pendingGameNode;
@@ -71,6 +80,7 @@ namespace KSPClub
             DontDestroyOnLoad(gameObject);
 
             Load();
+            LoadNews();
             GameEvents.onLevelWasLoaded.Add(OnSceneLoaded);
             GameEvents.onGameStateSave.Add(OnGameStateSave);
             GameEvents.onGameStateLoad.Add(OnGameStateLoad);
@@ -124,6 +134,15 @@ namespace KSPClub
             if (string.IsNullOrEmpty(PlayerId) &&
                 (scene == GameScenes.SPACECENTER || scene == GameScenes.FLIGHT))
                 StartCoroutine(DelayThen(0f, ShowSetupDialog));
+
+            // --- auto-show news on Space Center entry if this week's news is new
+            if (scene == GameScenes.SPACECENTER &&
+                LatestNews.Count > 0 && _lastNewsWeek != "shown")
+            {
+                _lastNewsWeek = "shown";
+                Save();
+                StartCoroutine(DelayThen(1.5f, SaveSyncUI.ShowNewsStatic));
+            }
         }
 
         // ------------------------------------------------------------------ Fix 1: claim existing vessels + Kerbals
@@ -355,6 +374,9 @@ namespace KSPClub
             _lastOutputSha = newSha;
             Save();
 
+            // Also download the news feed
+            StartCoroutine(DownloadNews(client));
+
             PopupDialog.SpawnPopupDialog(
                 new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
                 new MultiOptionDialog(
@@ -366,6 +388,68 @@ namespace KSPClub
                     new DialogGUIButton("OK", null, true)
                 ),
                 false, HighLogic.UISkin);
+        }
+
+        // ------------------------------------------------------------------ news feed
+
+        IEnumerator DownloadNews(GitHubClient client)
+        {
+            byte[]? data = null;
+            yield return client.DownloadFile("news/latest.json", bytes => data = bytes);
+            if (data == null) yield break;
+
+            try
+            {
+                File.WriteAllBytes(NewsPath, data);
+                LoadNews();
+                Debug.Log($"[KSPClub] News downloaded: {LatestNews.Count} event(s)");
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[KSPClub] Could not write news: {ex.Message}");
+            }
+        }
+
+        public void LoadNews()
+        {
+            LatestNews.Clear();
+            if (!File.Exists(NewsPath)) return;
+            try
+            {
+                string json = File.ReadAllText(NewsPath, System.Text.Encoding.UTF8);
+                // Simple JSON parse — extract "text" values and "week"
+                string week = ParseJsonString(json, "week") ?? "";
+                _lastNewsWeek = week;
+
+                // Extract all "text": "..." values in order
+                string search = json;
+                const string key = "\"text\":\"";
+                int idx;
+                while ((idx = search.IndexOf(key, System.StringComparison.Ordinal)) >= 0)
+                {
+                    idx += key.Length;
+                    int end = search.IndexOf('"', idx);
+                    if (end < 0) break;
+                    string text = search.Substring(idx, end - idx)
+                        .Replace("\\u0027", "'").Replace("\\\"", "\"");
+                    LatestNews.Add(text);
+                    search = search.Substring(end + 1);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[KSPClub] Could not parse news: {ex.Message}");
+            }
+        }
+
+        static string? ParseJsonString(string json, string field)
+        {
+            string key = $"\"{field}\":\"";
+            int start  = json.IndexOf(key, System.StringComparison.Ordinal);
+            if (start < 0) return null;
+            start += key.Length;
+            int end = json.IndexOf('"', start);
+            return end < 0 ? null : json.Substring(start, end - start);
         }
 
         // ------------------------------------------------------------------ setup dialog
@@ -513,6 +597,7 @@ namespace KSPClub
             RepoName       = node.GetValue("repoName")      ?? "ksp-club-saves";
             SaveName       = node.GetValue("saveName")      ?? "KSP_CLUB";
             _lastOutputSha = node.GetValue("lastOutputSha") ?? "";
+            _lastNewsWeek  = node.GetValue("lastNewsWeek")  ?? "";
 
             _relations.Clear();
             ConfigNode? relNode = node.GetNode("RELATIONS");
@@ -538,6 +623,7 @@ namespace KSPClub
             node.AddValue("repoName",      RepoName);
             node.AddValue("saveName",      SaveName);
             node.AddValue("lastOutputSha", _lastOutputSha);
+            node.AddValue("lastNewsWeek",  _lastNewsWeek);
             if (_relations.Count > 0)
             {
                 ConfigNode relNode = node.AddNode("RELATIONS");

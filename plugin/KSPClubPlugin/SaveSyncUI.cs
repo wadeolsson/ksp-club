@@ -82,6 +82,7 @@ namespace KSPClub
                     HighLogic.UISkin,
                     380f,
                     new DialogGUIButton("Submit My Save", OnSubmitClicked),
+                    new DialogGUIButton("News",          ShowNewsDialog, true),
                     new DialogGUIButton("Relations",     ShowRelationsDialog, true),
                     new DialogGUIButton("Settings",      () => PlayerConfig.Instance?.ShowSetupDialog(), true),
                     new DialogGUIButton("Close",         null, false)
@@ -95,6 +96,45 @@ namespace KSPClub
         {
             if (_submitting) return;
             StartCoroutine(SubmitSave());
+        }
+
+        // ------------------------------------------------------------------ news dialog
+
+        void ShowNewsDialog() => SpawnNewsDialog();
+
+        public static void ShowNewsStatic() => SpawnNewsDialog();
+
+        static void SpawnNewsDialog()
+        {
+            var news = PlayerConfig.LatestNews;
+
+            string body;
+            if (news.Count == 0)
+            {
+                body = "No news yet.\n\nSubmit your save and run the merge to generate the first report.";
+            }
+            else
+            {
+                var sb = new System.Text.StringBuilder();
+                foreach (var line in news)
+                {
+                    sb.Append("• ");
+                    sb.AppendLine(line);
+                }
+                body = sb.ToString().TrimEnd();
+            }
+
+            PopupDialog.SpawnPopupDialog(
+                new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
+                new MultiOptionDialog(
+                    "KSPClubNews",
+                    body,
+                    "KSP CLUB — Weekly Report",
+                    HighLogic.UISkin,
+                    440f,
+                    new DialogGUIButton("Close", null, false)
+                ),
+                false, HighLogic.UISkin);
         }
 
         // ------------------------------------------------------------------ relations dialog
