@@ -37,6 +37,8 @@ namespace KSPClub
         private bool        _isPumping;
         private Coroutine?  _pumpRoutine;
 
+        private static Texture2D? _tankerIcon;
+
         // Cache of other players' tanker configs populated by PlayerConfig on save load
         public static readonly Dictionary<uint, TankerConfig> TankerCache
             = new Dictionary<uint, TankerConfig>();
@@ -46,6 +48,7 @@ namespace KSPClub
         void Start()
         {
             GameEvents.onGUIApplicationLauncherReady.Add(AddButton);
+            _tankerIcon = GameDatabase.Instance?.GetTexture("KSPClubPlugin/icon_tanker", false);
         }
 
         void OnDestroy()
@@ -534,9 +537,45 @@ namespace KSPClub
 
         // ------------------------------------------------------------------ icon
 
+        // ------------------------------------------------------------------ map overlay
+
+        void OnGUI()
+        {
+            if (_tankerIcon == null) return;
+            if (!MapView.MapIsEnabled) return;
+
+            var scenario = KSPClubScenario.Instance;
+
+            foreach (var vessel in FlightGlobals.Vessels)
+            {
+                // Check own tankers via scenario, other players' via cache
+                bool isTanker = (scenario != null && scenario.IsTanker(vessel.persistentId))
+                                || (TankerCache.TryGetValue(vessel.persistentId, out var tc) && tc.Active);
+                if (!isTanker) continue;
+
+                // Project vessel position to screen space (map view uses ScaledSpace)
+                Vector3d scaledPos = ScaledSpace.LocalToScaledSpace(vessel.GetWorldPos3D());
+                Vector3 screen = PlanetariumCamera.Camera.WorldToScreenPoint(
+                    new Vector3((float)scaledPos.x, (float)scaledPos.y, (float)scaledPos.z));
+
+                if (screen.z <= 0) continue; // behind camera
+
+                // KSP GUI uses top-left origin; flip Y
+                float sx = screen.x;
+                float sy = Screen.height - screen.y;
+
+                const float SIZE = 24f;
+                GUI.DrawTexture(new Rect(sx - SIZE / 2, sy - SIZE / 2, SIZE, SIZE), _tankerIcon);
+            }
+        }
+
+        // ------------------------------------------------------------------ icon
+
         static Texture2D MakeIcon()
         {
-            var tex = GameDatabase.Instance?.GetTexture("KSPClubPlugin/icon_fuel", false);
+            // Use the tank icon for the toolbar button
+            var tex = GameDatabase.Instance?.GetTexture("KSPClubPlugin/icon_tanker", false)
+                      ?? GameDatabase.Instance?.GetTexture("KSPClubPlugin/icon_fuel", false);
             if (tex != null) return tex;
             // Fallback
             const int size = 38;
