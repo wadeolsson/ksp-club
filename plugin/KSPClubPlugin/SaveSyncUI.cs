@@ -277,18 +277,18 @@ namespace KSPClub
                 false, HighLogic.UISkin);
         }
 
-        /// <summary>Generate a simple coloured square icon for the toolbar.</summary>
         private static Texture2D MakeIcon()
         {
+            var tex = GameDatabase.Instance?.GetTexture("KSPClubPlugin/icon_sync", false);
+            if (tex != null) return tex;
+            // Fallback
             const int size = 38;
-            var tex  = new Texture2D(size, size, TextureFormat.RGBA32, false);
-            var blue = new Color(0.18f, 0.52f, 0.90f, 1f);
+            tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            var blue  = new Color(0.18f, 0.52f, 0.90f, 1f);
             var white = Color.white;
-
             for (int y = 0; y < size; y++)
             for (int x = 0; x < size; x++)
             {
-                // Simple "KC" badge: blue background, white border ring
                 bool border = x < 2 || x >= size - 2 || y < 2 || y >= size - 2;
                 tex.SetPixel(x, y, border ? white : blue);
             }

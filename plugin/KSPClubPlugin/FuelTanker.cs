@@ -521,16 +521,15 @@ namespace KSPClub
 
         static Texture2D MakeIcon()
         {
+            var tex = GameDatabase.Instance?.GetTexture("KSPClubPlugin/icon_fuel", false);
+            if (tex != null) return tex;
+            // Fallback
             const int size = 38;
-            var tex    = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
             var orange = new Color(1f, 0.55f, 0.10f, 1f);
-            var white  = Color.white;
             for (int y = 0; y < size; y++)
             for (int x = 0; x < size; x++)
-            {
-                bool border = x < 2 || x >= size - 2 || y < 2 || y >= size - 2;
-                tex.SetPixel(x, y, border ? white : orange);
-            }
+                tex.SetPixel(x, y, (x < 2 || x >= size-2 || y < 2 || y >= size-2) ? Color.white : orange);
             tex.Apply();
             return tex;
         }
