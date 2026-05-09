@@ -1,13 +1,15 @@
+using System.Collections;
 using UnityEngine;
 
 namespace KSPClub
 {
     /// <summary>
-    /// Active in Flight scene. Claims any vessel that is created while the
-    /// player is playing — including newly launched rockets and separated debris.
+    /// Active in Flight scene. Claims any vessel created while the player is
+    /// playing — including newly launched rockets and separated debris.
     ///
-    /// The actual playerID stamp happens in PlayerConfig.OnGameStateSave so it
-    /// is written regardless of which scene the player is in when they save.
+    /// If KSPClubScenario hasn't finished initialising when onVesselCreate
+    /// fires (race condition on fresh VAB launches), the claim is retried
+    /// every 100 ms for up to 5 seconds.
     /// </summary>
     [KSPAddon(KSPAddon.Startup.Flight, false)]
     public class VesselTagger : MonoBehaviour
@@ -26,7 +28,6 @@ namespace KSPClub
         {
             if (vessel == null) return;
 
-            // Warn if no player ID is set yet — vessel will remain untagged
             if (string.IsNullOrEmpty(PlayerConfig.Instance?.PlayerId))
             {
                 ScreenMessages.PostScreenMessage(
@@ -36,11 +37,36 @@ namespace KSPClub
                 return;
             }
 
-            KSPClubScenario.Instance?.ClaimVessel(vessel.persistentId);
+            if (KSPClubScenario.Instance != null)
+            {
+                KSPClubScenario.Instance.ClaimVessel(vessel.persistentId);
+                Debug.Log($"[KSPClub] Claimed '{vessel.vesselName}' (pid={vessel.persistentId})");
+            }
+            else
+            {
+                // Scenario not ready yet — retry until it is
+                StartCoroutine(ClaimWhenReady(vessel.persistentId, vessel.vesselName));
+            }
+        }
 
-            Debug.Log($"[KSPClub] New vessel '{vessel.vesselName}' " +
-                      $"(persistentId={vessel.persistentId}) claimed for " +
-                      $"player '{PlayerConfig.Instance!.PlayerId}'");
+        IEnumerator ClaimWhenReady(uint pid, string vesselName)
+        {
+            float waited = 0f;
+            while (KSPClubScenario.Instance == null && waited < 5f)
+            {
+                yield return new WaitForSeconds(0.1f);
+                waited += 0.1f;
+            }
+
+            if (KSPClubScenario.Instance != null)
+            {
+                KSPClubScenario.Instance.ClaimVessel(pid);
+                Debug.Log($"[KSPClub] Claimed '{vesselName}' after {waited:F1}s delay");
+            }
+            else
+            {
+                Debug.LogWarning($"[KSPClub] Could not claim '{vesselName}' — scenario never initialised");
+            }
         }
     }
 }

@@ -180,7 +180,14 @@ namespace KSPClub
 
         // ------------------------------------------------------------------ helpers
 
-        static bool IsOwned(uint pid) =>
-            KSPClubScenario.Instance?.OwnsVessel(pid) ?? true;
+        static bool IsOwned(uint pid)
+        {
+            var scenario = KSPClubScenario.Instance;
+            // If scenario hasn't loaded yet (0 vessels claimed), assume safe —
+            // prevents false ejection when launching fresh from VAB before
+            // VesselTagger has had a chance to claim the new vessel.
+            if (scenario == null || scenario.OwnedVesselCount == 0) return true;
+            return scenario.OwnsVessel(pid);
+        }
     }
 }
