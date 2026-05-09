@@ -6,162 +6,162 @@ A two-component system for asynchronous multiplayer Kerbal Space Program 1.12.5.
 
 **Two repos:**
 - `ksp-club` (this repo) — Python merger CLI + C# KSP plugin
-- `ksp-club-saves` (private) — save file storage: `submissions/`, `output/`, `universal/`
+- `ksp-club-saves` (private, `~/ksp-club-saves`) — save file storage
 
 **Two components:**
 - `merger/` — Python CLI tool run by the game master each week
 - `plugin/` — C# KSP plugin installed by each player
 
+**Current players:** wade (Octagon Aerospace), kent (Project Nominal), ed (Ed Aerospace)
+
 ## Architecture: The Two-Layer System
 
 Every player save has two layers:
 
-- **Persistent layer** (player-owned, never overwritten): their vessels, Kerbals, career progression (funds, science, tech tree, contracts)
-- **Dynamic layer** (synced from universe each week): everyone else's vessels, Kerbals, and world-state scenarios
+- **Persistent layer** (player-owned, never overwritten): their vessels, Kerbals, career progression (funds, science, tech tree, contracts, building levels, strategies)
+- **Dynamic layer** (synced from universe each week): world-state scenarios (ROCs, resources, asteroids, CommNet, destructibles)
 
 The merge pipeline:
-1. Extract each player's persistent layer from their submission
-2. Advance all vessel orbits to canonical UT (max UT across all submissions)
-3. Merge vessels + Kerbals into a universal state
-4. Rebuild each player's save = their persistent layer + updated universal world
+1. Extract each player's persistent layer (using `KSPClubScenario.OWNED_VESSELS/OWNED_KERBALS` as primary ownership source, `playerID` field as fallback)
+2. Skip PRELAUNCH vessels; purge Debris older than 21 KSP days
+3. Advance all vessel orbits to canonical UT (max UT across all submissions)
+4. Merge vessels + Kerbals; strip stock Kerbals (Jeb/Val/Bill/Bob) entirely
+5. Rebuild each player's save = their persistent layer + updated universal world
 
 ## Repository Layout
 
 ```
 merger/
   sfs/
-    parser.py        # .sfs → Node tree
+    parser.py        # .sfs → Node tree (Node class with values/children)
     serializer.py    # Node tree → .sfs
   merge/
-    layers.py        # persistent/dynamic classification + extract()
-    time.py          # Kepler orbit advancement to canonical UT
-    vessels.py       # collect vessels, check ownership conflicts
-    kerbals.py       # merge rosters, dedup names
+    layers.py        # PERSISTENT/DYNAMIC_SCENARIOS, extract(), vessel transfer handling
+    time.py          # Kepler orbit advancement (BODY_MU table for all KSP bodies)
+    vessels.py       # collect vessels, dedup by persistentId
+    kerbals.py       # merge rosters, dedup names, exclude STOCK_KERBALS
     mods.py          # validate part names against modlist
-    builder.py       # full pipeline: build(submissions) → (universal, rebuilt, warnings)
+    builder.py       # build() pipeline + _purge_old_debris()
   storage/
     git.py           # git pull/push on the saves repo
-  cli.py             # argparse CLI: merge, validate, status, distribute, add-player
+  cli.py             # merge, validate, status, distribute, add-player commands
   config.py          # saves repo path resolution, player registry
 
-plugin/
-  KSPClubPlugin/
-    PlayerConfig.cs  # persists across scenes; loads player ID; stamps VESSEL nodes on save
-    ClubScenario.cs  # ScenarioModule tracking owned vessel persistentIds
-    VesselTagger.cs  # hooks onVesselCreate in flight to claim new vessels
-    KerbalRestrictor.cs  # warns against using stock Kerbals
-    KSPClubPlugin.csproj
-    AssemblyInfo.cs
-  GameData/
-    KSPClubPlugin/
-      KSPClubPlugin.dll   # built output (committed for distribution)
-      README.txt
+plugin/KSPClubPlugin/
+  PlayerConfig.cs      # [MainMenu, persist=true] — config, save sync, vessel/Kerbal stamping,
+                       #   main-menu new-save check, KnownPlayers + VesselOwnerCache population
+  ClubScenario.cs      # ScenarioModule: OWNED_VESSELS + OWNED_KERBALS lists, saved in .sfs
+  VesselTagger.cs      # [Flight] — onVesselCreate → ClaimVessel
+  VesselProtection.cs  # [Flight+TrackStation] — block fly/recover/delete of non-owned vessels,
+                       #   eject to tracking station if you enter flight with non-owned vessel
+  VesselTrading.cs     # [TrackStation] — green toolbar, transfer vessel to another player;
+                       #   stamps transferTarget field, merger reassigns playerID on next merge
+  KerbalRestrictor.cs  # [SpaceCentre] — warns against stock Kerbals in Astronaut Complex
+  StarterKerbals.cs    # [SpaceCentre] — generates 4 random Kerbals for new players (0 owned)
+  OrbitColors.cs       # [Flight+TrackStation] — colors orbit lines + icons by player;
+                       #   VesselColorCache + VesselOwnerCache populated at save load
+  Relations.cs         # Enum: Friendly / Neutral / Hostile
+  AgencyCommNet.cs     # [Flight] — zeros antennaRelay.power for Neutral/Hostile vessels every 6s
+  GitHubClient.cs      # UnityWebRequest GitHub Contents API (GetSha, DownloadFile, PutFile)
+  SaveSyncUI.cs        # [SpaceCentre] — blue toolbar: submit save, open relations dialog, settings
+  AssemblyInfo.cs
+  KSPClubPlugin.csproj
+
+plugin/GameData/KSPClubPlugin/
+  KSPClubPlugin.dll    # built output — copy to live KSP after dotnet build
+  README.txt
 
 docs/
-  onboarding.md      # player setup guide
-  game-master.md     # weekly merge runbook
-  sfs-format.md      # .sfs grammar, VESSEL/ORBIT fields, scenario classification
+  onboarding.md        # player setup guide (needs update: missing relations/colors/trading)
+  game-master.md       # weekly merge runbook
+  sfs-format.md        # .sfs grammar, VESSEL/ORBIT fields, scenario classification
 
 tests/
-  test_parser.py     # parser + serializer tests (13 tests)
-  test_merge.py      # layers, time, vessels, kerbals, mods, builder (36 tests)
+  test_parser.py       # parser + serializer (13 tests)
+  test_merge.py        # layers, time, vessels, kerbals, mods, builder (46 tests, 3 skipped)
 ```
 
 ## Running Tests
 
 ```bash
-# Python 3.10 (Homebrew) is required — system Python 3.9 has pip permission issues
-/opt/homebrew/bin/python3.10 -m pytest tests/ -v
-
-# Or if ksp-club is installed in the active Python:
-python3 -m pytest tests/ -v
+/opt/homebrew/bin/python3.10 -m pytest tests/ -q
 ```
 
-49 tests, all should pass. Tests include real-save tests that read from the KSP CLUB install on this machine — they're marked `skipif` if the save isn't present.
+All should pass. A few real-save tests are `skipif` when the KSP CLUB install isn't present.
 
 ## Building the Plugin
 
 ```bash
 cd plugin/KSPClubPlugin
 dotnet build -c Release
+# DLL auto-copied to plugin/GameData/KSPClubPlugin/KSPClubPlugin.dll
 ```
 
-Requires `dotnet` 7.0 (at `/usr/local/share/dotnet/x64/dotnet`). The build post-step automatically copies the DLL to `plugin/GameData/KSPClubPlugin/KSPClubPlugin.dll`.
-
-The KSP managed assemblies are resolved from the default Mac Steam path. To override:
-```bash
-dotnet build -c Release -p:KSP_MANAGED=/path/to/KSP/Managed
-```
-
-## Installing the Plugin Locally
-
-The plugin is already installed in the KSP CLUB game at:
-```
-~/Library/Application Support/Steam/steamapps/common/KSP CLUB/
-  Kerbal Space Program CLUB/GameData/KSPClubPlugin/KSPClubPlugin.dll
-```
-
-After rebuilding, copy the new DLL there:
+Then deploy to the live KSP install:
 ```bash
 cp plugin/GameData/KSPClubPlugin/KSPClubPlugin.dll \
   ~/Library/Application\ Support/Steam/steamapps/common/KSP\ CLUB/\
-Kerbal\ Space\ Program\ CLUB/GameData/KSPClubPlugin/
+  Kerbal\ Space\ Program\ CLUB/GameData/KSPClubPlugin/
 ```
 
-## CLI Tool Setup
-
-```bash
-# Install in editable mode (use Homebrew Python, not system Python)
-/opt/homebrew/bin/python3.10 -m pip install -e .
-
-# Config — create this file (it's gitignored):
-echo '{"saves_repo": "~/ksp-club-saves"}' > .ksp-club.json
-
-# Test
-ksp-club status
-```
+Requires `dotnet` 7.0. KSP assemblies resolved from the default Mac Steam path automatically.
 
 ## Key Design Decisions
 
-**Vessel ownership** is identified by `playerID = <id>` stamped into each `VESSEL` block in `persistent.sfs`. The plugin writes this on every game save via `onGameStateSave`. The merger reads it to decide whose vessel is whose.
+**Vessel ownership** — primary: `KSPClubScenario.OWNED_VESSELS` persistentId list (saved in the .sfs). Fallback: `playerID` field stamped on VESSEL nodes via `onProtoVesselSave`. Secondary fallback: `claim_untagged=True` claims untagged vessels for the submitter.
 
-**Canonical UT** is always `max(all submitted UTs)`. Vessels at earlier UTs have their orbits mathematically advanced using Kepler propagation (`merger/merge/time.py`).
+**Kerbal ownership** — same pattern: `OWNED_KERBALS` name list in the scenario, then `playerID` field stamped in KERBAL nodes via post-save file processing (`StampKerbalsInFile` uses `ConfigNode.Load/Save`).
 
-**Kerbal ownership** works the same way — `playerID` field in `KERBAL` blocks. Stock Kerbals (Jeb, Val, Bill, Bob, etc.) are always in the dynamic/universal layer and hardcoded in `layers.py:STOCK_KERBALS`.
+**Vessel stamping** — vessels are stamped in `onProtoVesselSave` (fires per-vessel during serialisation — the correct hook). Kerbals are stamped by reading/writing the .sfs file directly after save, since no per-Kerbal save event exists.
 
-**Scenario classification** — `layers.py` has `PERSISTENT_SCENARIOS` and `DYNAMIC_SCENARIOS` frozensets. Unknown scenarios default to persistent (safe — we never lose player data). `KSPClubScenario` (the plugin's own ScenarioModule) is in `PERSISTENT_SCENARIOS`.
+**Vessel transfer** — plugin stamps `transferTarget = kent` on a vessel. Merger detects it in `layers.py`, reassigns `playerID` to the target, clears the field. Vessel routes to target's save after next merge.
 
-**`claim_untagged=True`** (the default) — vessels/Kerbals with no `playerID` are claimed by whoever submitted that save. This handles pre-plugin saves gracefully but breaks down with multiple players. Once everyone has the plugin installed, consider switching to `False`.
+**Orbit colors** — player picks a named color (`blue/red/green/etc`). Color stamped as `playerColor = R,G,B` on vessel nodes via `onProtoVesselSave`. At load time, `ClaimExistingFromNode` populates `OrbitColorsBase.VesselColorCache` (persistentId→Color) and `VesselOwnerCache` (persistentId→playerId). `OrbitColors` applies colors when map view opens; modulated by relation (Friendly=full, Neutral=dimmed, Hostile=dim red).
 
-## The .sfs Format
+**CommNet** — `AgencyCommNet` caches original `antennaRelay.power` for non-owned vessels. For Neutral/Hostile vessels, zeros the relay power so they can't act as relay hops. Runs every 6s in flight. Each player's game is independent so this is per-player.
 
-Plain text, tab-indented, block-based. See `docs/sfs-format.md` for full reference.
-The parser in `merger/sfs/parser.py` handles all edge cases: duplicate keys, empty values, values containing `=`, multiple sibling blocks with the same name.
+**Relations** — `Friendly / Neutral / Hostile` per player. Stored in `player.cfg` under `RELATIONS {}` block. Used by OrbitColors (brightness), AgencyCommNet (relay access), and VesselProtection (future: visibility).
+
+**Scenario classification** — `PERSISTENT_SCENARIOS` includes career progression, building levels, strategies, waypoints, sentinel targets, contract events, and `KSPClubScenario`. `DYNAMIC_SCENARIOS` is world state only (asteroids, CommNet, ROCs, resources, destructibles). Unknown scenarios default to persistent.
+
+**Stock Kerbals** — Jeb/Val/Bill/Bob stripped from all merged saves. New players get 4 random Kerbals auto-generated by `StarterKerbals` on first Space Center entry.
 
 ## Saves Repo Layout
 
 ```
 ksp-club-saves/
-  submissions/<player-id>/persistent.sfs   ← player uploads here
-  output/<player-id>/persistent.sfs        ← game master writes here after merge
-  universal/persistent.sfs                 ← canonical world state
+  submissions/<id>/persistent.sfs   ← player uploads (in-game toolbar or GitHub Desktop)
+  output/<id>/persistent.sfs        ← rebuilt save after merge (auto-downloaded by plugin)
+  universal/persistent.sfs          ← canonical world state
   config/
-    players.json    ← player registry {id, displayName, agencyName}
-    modlist.txt     ← allowed part names (empty = validation disabled)
+    players.json    ← {id, displayName, agencyName}
+    modlist.txt     ← allowed part names (empty = disabled)
+  .github/workflows/merge.yml       ← auto-merge on all-submitted push or Sunday 23:00 UTC
 ```
 
-## Weekly Workflow (Game Master)
+## Weekly Workflow
 
+**Automated** — GitHub Actions runs the merge when all players have submitted, or on Sunday 23:00 UTC. Players submit via in-game toolbar button and receive the merged save via main-menu auto-download prompt.
+
+**Manual** (game master):
 ```bash
-ksp-club status      # see who submitted
-ksp-club validate    # check saves before merging
-ksp-club merge       # full pipeline: pull → merge → write output → push
+cd ~/ksp-club
+ksp-club status      # who has submitted
+ksp-club validate    # check saves
+ksp-club merge       # pull → merge → push output
 ```
+
+## Plugin Config (`player.cfg`)
+
+Stored at `GameData/KSPClubPlugin/PluginData/player.cfg`. Fields:
+- `playerId`, `agencyName`, `colorName` — identity
+- `githubToken`, `repoOwner`, `repoName`, `saveName` — sync config
+- `lastOutputSha` — SHA of last downloaded output save (prevents re-prompting)
+- `RELATIONS {}` block — per-player Friendly/Neutral/Hostile stances
 
 ## Python Version Note
 
-This machine has two Pythons:
-- `/Library/Developer/CommandLineTools/usr/bin/python3` — system Python 3.9, no pip write access
-- `/opt/homebrew/bin/python3.10` — Homebrew Python 3.10, use this for everything
+- `/Library/Developer/CommandLineTools/usr/bin/python3` — system Python 3.9, no pip access
+- `/opt/homebrew/bin/python3.10` — use this for everything
 
-The `ksp-club` CLI is installed under the Homebrew Python at `/opt/homebrew/bin/ksp-club`.
+CLI installed at `/opt/homebrew/bin/ksp-club`.
