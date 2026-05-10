@@ -151,7 +151,10 @@ def test_persistent_scenarios_extracted():
 def test_dynamic_scenarios_excluded():
     root = parse(MULTI_PLAYER_SAVE)
     contrib = extract(root, "wade")
-    assert "ScenarioDestructibles" not in contrib.scenarios
+    # ScenarioDestructibles is now persistent (per-player building damage)
+    assert "ScenarioDestructibles" in contrib.scenarios
+    # ROCScenario would be dynamic — not in the test fixture but confirming classification
+    assert "ROCScenario" not in contrib.scenarios
 
 
 def test_unknown_scenario_kept_with_warning():

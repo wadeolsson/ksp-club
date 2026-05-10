@@ -44,13 +44,13 @@ PERSISTENT_SCENARIOS: frozenset[str] = frozenset({
     "ScenarioCustomWaypoints",       # each player sets their own waypoints
     "ScenarioContractEvents",        # each player's own mission control event log
     "SentinelScenario",              # each player manages their own sentinel targets
+    "ScenarioDestructibles",         # each player has their own building damage state
 })
 
 # These scenarios describe the shared world state and come from the universal state.
 DYNAMIC_SCENARIOS: frozenset[str] = frozenset({
     "ROCScenario",               # world surface features
     "ResourceScenario",          # world resource seed / settings
-    "ScenarioDestructibles",     # shared building damage state
     "ScenarioDiscoverableObjects", # shared asteroid / comet spawning
     "CommNetScenario",           # shared communications network
     "KPBSScenario",              # shared planetary base systems world state
